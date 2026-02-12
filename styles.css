@@ -287,6 +287,7 @@ body {
 
 .builder-remove {
   font-weight: 600;
+  margin-left: auto;
   cursor: pointer;
 }
 
@@ -442,7 +443,15 @@ body {
 }
 
 @media (max-width: 680px) {
+  .custom-tabs .nav-item {
+    display: flex;
+  }
+
   .mode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 104px;
     font-size: 0.95rem;
     padding: 9px 8px;
   }
