@@ -130,3 +130,169 @@ test("ignores pre-description stat card noise in image parsing", async ({ page }
   expect(parsed.rows.map((row) => row.type)).toEqual(["warmup", "run", "walkrest", "cooldown"]);
   expect(parsed.rows.some((row) => Number(row.distance || 0).toFixed(2) === "5.34")).toBeFalsy();
 });
+
+test("parses split interval speed lines from OCR-like screenshot text", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "Description",
+      "Warm-Up",
+      "2km at a conversational pace",
+      "No faster than 8.5kph",
+      "90s walking rest",
+      "Repeat x3",
+      "400m at",
+      "10.4-11.0kph",
+      "60s walking rest",
+      "Rest",
+      "60s walking rest",
+      "Repeat x3",
+      "400m at",
+      "10.4-11.0kph",
+      "60s walking rest",
+      "Rest",
+      "60s walking rest",
+      "Cool Down",
+      "2km at a conversational pace",
+      "or slower!"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  expect(parsed.rows).toHaveLength(17);
+  expect(parsed.rows[0].type).toBe("warmup");
+  expect(parsed.rows[0].speedKmh).toBeCloseTo(8.5, 1);
+  const runRows = parsed.rows.filter((row) => row.type === "run");
+  expect(runRows).toHaveLength(6);
+  expect(runRows[0].distance).toBeCloseTo(0.4, 2);
+  expect(runRows[0].speedKmh).toBeCloseTo(10.7, 1);
+});
+
+test("uses step-number anchors when present in OCR text", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "400m Repeats",
+      "Description",
+      "Warm-Up",
+      "1",
+      "2km at a conversational pace",
+      "No faster than 8.5kph",
+      "2",
+      "90s walking rest",
+      "Repeat x3",
+      "3",
+      "400m at",
+      "10.4-11.0kph",
+      "60s walking rest",
+      "Cool Down",
+      "4",
+      "2km at a conversational pace"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  expect(parsed.rows.some((row) => row.type === "run")).toBeTruthy();
+  expect(parsed.rows.some((row) => row.type === "warmup")).toBeTruthy();
+  expect(parsed.rows.some((row) => row.type === "cooldown")).toBeTruthy();
+  expect(parsed.rows.some((row) => row.type === "walkrest")).toBeTruthy();
+});
+
+test("detects repeat markers written as xN in OCR text", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "Description",
+      "Warm-Up",
+      "1",
+      "2km at a conversational pace",
+      "2",
+      "90s walking rest",
+      "x3",
+      "3",
+      "400m at 10.7kph",
+      "60s walking rest",
+      "Cool Down",
+      "4",
+      "2km at a conversational pace"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  const repeatGroup = parsed.items.find((item) => item.kind === "group" && item.label === "Repeat x3");
+  expect(repeatGroup).toBeTruthy();
+});
+
+test("detects OCR-mangled repeat labels", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "Description",
+      "Warm-Up",
+      "1",
+      "2km at a conversational pace",
+      "2",
+      "90s walking rest",
+      "epeat x3",
+      "3",
+      "400m at 10.7kph",
+      "60s walking rest",
+      "Cool Down",
+      "4",
+      "2km at a conversational pace"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  const repeatGroup = parsed.items.find((item) => item.kind === "group" && item.label === "Repeat x3");
+  expect(repeatGroup).toBeTruthy();
+});
+
+test("does not invent repeat blocks when OCR misses repeat header text", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "Description",
+      "1",
+      "2km at a conversational pace",
+      "2",
+      "90s walking rest",
+      "3",
+      "400m at 10.7kph",
+      "60s walking rest",
+      "4",
+      "60s walking rest",
+      "5",
+      "400m at 10.7kph",
+      "60s walking rest",
+      "(5)",
+      "60s walking rest",
+      "7",
+      "2km at a conversational pace"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  const inferredGroups = parsed.items.filter((item) => item.kind === "group" && item.label === "Repeat");
+  expect(inferredGroups).toHaveLength(0);
+});

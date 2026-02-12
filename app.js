@@ -6,6 +6,10 @@ const textInputSection = document.getElementById("textInputSection");
 const imageInputSection = document.getElementById("imageInputSection");
 const buildInputSection = document.getElementById("buildInputSection");
 const workoutImageInput = document.getElementById("workoutImageInput");
+const ocrEngineSelect = document.getElementById("ocrEngineSelect");
+const ocrPreprocessInput = document.getElementById("ocrPreprocess");
+const ocrDebugWrap = document.getElementById("ocrDebugWrap");
+const ocrDebugOutput = document.getElementById("ocrDebugOutput");
 const unitKmInput = document.getElementById("unitKm");
 const unitMilesInput = document.getElementById("unitMiles");
 const walkingTargetInput = document.getElementById("walkingTarget");
@@ -28,6 +32,8 @@ const xmlUnitKmInput = document.getElementById("xmlUnitKm");
 const xmlUnitMilesInput = document.getElementById("xmlUnitMiles");
 
 const KM_PER_MILE = 1.60934;
+let scribeModulePromise = null;
+let scribeUnavailable = false;
 let inputMode = "text";
 let builderIdCounter = 1;
 let builderBlocks = [];
@@ -182,32 +188,283 @@ function normalizeOcrText(raw) {
     .trim();
 }
 
-async function extractWorkoutTextFromImageFile(file) {
-  if (!file) return "";
-  if (typeof Tesseract === "undefined") {
-    throw new Error("OCR library failed to load. Reload the page and try again.");
+function currentOcrEngine() {
+  const value = String(ocrEngineSelect?.value || "auto").toLowerCase();
+  if (value === "tesseract") return "tesseract";
+  if (value === "scribe") return isGitHubPagesHost() ? "tesseract" : "scribe";
+  return isGitHubPagesHost() ? "tesseract" : "auto";
+}
+
+function shouldPreprocessOcr() {
+  return Boolean(ocrPreprocessInput?.checked);
+}
+
+function isGitHubPagesHost() {
+  const host = String(window.location.hostname || "").toLowerCase();
+  return host === "github.io" || host.endsWith(".github.io");
+}
+
+function configureOcrEngineOptionsForHost() {
+  if (!ocrEngineSelect) return;
+  const autoOption = ocrEngineSelect.querySelector('option[value="auto"]');
+  const scribeOption = ocrEngineSelect.querySelector('option[value="scribe"]');
+  if (!isGitHubPagesHost()) return;
+
+  if (autoOption) {
+    autoOption.textContent = "Auto (Tesseract on GitHub Pages)";
   }
-  const result = await Tesseract.recognize(file, "eng", {
+  if (scribeOption) {
+    scribeOption.disabled = true;
+    scribeOption.textContent = "Scribe (local only)";
+    if (ocrEngineSelect.value === "scribe") {
+      ocrEngineSelect.value = "auto";
+    }
+  }
+}
+
+function scoreOcrText(text) {
+  const lower = String(text || "").toLowerCase();
+  if (!lower.trim()) return 0;
+  let score = 0;
+  score += (lower.match(/\bwalking rest\b/g) || []).length * 3;
+  score += (lower.match(/\bconversational pace\b/g) || []).length * 3;
+  score += (lower.match(/\brepeat\b/g) || []).length * 4;
+  score += (lower.match(/\b(?:warm-?\s*up|cool\s*down|session|rest)\b/g) || []).length * 2;
+  score += (lower.match(/\b\d+(?:[.,]\d+)?\s*(?:km|mi|m)\b/g) || []).length * 2;
+  score += (lower.match(/\b\d+(?:\.\d+)?\s*(?:kph|km\/h|mph)\b/g) || []).length * 2;
+  score += Math.min(lower.length / 120, 10);
+  return score;
+}
+
+function pickBestOcrResult(results) {
+  if (!results.length) return { text: "", debug: "", engine: "none", pass: "none" };
+  const ranked = results
+    .map((entry) => ({
+      ...entry,
+      normalized: normalizeOcrText(entry.text || ""),
+      score: scoreOcrText(normalizeOcrText(entry.text || ""))
+    }))
+    .sort((a, b) => b.score - a.score || b.normalized.length - a.normalized.length);
+
+  const best = ranked[0];
+  const debug = ranked
+    .map((entry, index) => {
+      const header = `[${index + 1}] engine=${entry.engine} pass=${entry.pass} score=${entry.score.toFixed(1)}`;
+      return `${header}\n${entry.normalized}`;
+    })
+    .join("\n\n----------------\n\n");
+
+  return { text: best.normalized, debug, engine: best.engine, pass: best.pass };
+}
+
+async function loadImageForProcessing(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = url;
+    await image.decode();
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function createCanvasFromImage(image, options = {}) {
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  const yStartRatio = Number.isFinite(options.yStartRatio) ? options.yStartRatio : 0;
+  const scale = Number.isFinite(options.scale) ? options.scale : 1;
+  const startY = Math.max(0, Math.floor(height * Math.min(Math.max(yStartRatio, 0), 0.9)));
+  const cropHeight = Math.max(1, height - startY);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.floor(width * scale));
+  canvas.height = Math.max(1, Math.floor(cropHeight * scale));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(image, 0, startY, width, cropHeight, 0, 0, canvas.width, canvas.height);
+
+  if (options.enhance) {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    let sumGray = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      sumGray += gray;
+    }
+    const avgGray = sumGray / (data.length / 4);
+    const threshold = Math.max(120, Math.min(180, Math.round(avgGray)));
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.round(data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      const contrast = Math.max(0, Math.min(255, Math.round((gray - avgGray) * 1.8 + avgGray)));
+      const value = contrast >= threshold ? 255 : 0;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  return canvas;
+}
+
+async function buildOcrInputs(file, preprocessEnabled) {
+  const image = await loadImageForProcessing(file);
+  const inputs = [{ pass: "full-original", image: file }];
+  if (!preprocessEnabled) return inputs;
+
+  inputs.push({
+    pass: "full-enhanced",
+    image: createCanvasFromImage(image, { scale: 2, yStartRatio: 0, enhance: true })
+  });
+  inputs.push({
+    pass: "lower-enhanced",
+    image: createCanvasFromImage(image, { scale: 2, yStartRatio: 0.3, enhance: true })
+  });
+  inputs.push({
+    pass: "lower-clean",
+    image: createCanvasFromImage(image, { scale: 1.8, yStartRatio: 0.35, enhance: false })
+  });
+  return inputs;
+}
+
+async function loadScribeApi() {
+  if (scribeUnavailable) {
+    throw new Error("Scribe OCR module is unavailable.");
+  }
+  if (scribeModulePromise) return scribeModulePromise;
+  scribeModulePromise = (async () => {
+    try {
+      const mod = await import("./node_modules/scribe.js-ocr/scribe.js");
+      const api = mod?.default || mod;
+      if (!api || typeof api.extractText !== "function") {
+        throw new Error("Scribe API is unavailable.");
+      }
+      return api;
+    } catch (error) {
+      scribeModulePromise = null;
+      scribeUnavailable = true;
+      throw error;
+    }
+  })();
+  return scribeModulePromise;
+}
+
+function extractTextFromScribeResponse(response) {
+  if (!response) return "";
+  if (typeof response === "string") return response;
+  if (Array.isArray(response)) {
+    return response
+      .map((item) => item?.text || item?.data?.text || (typeof item === "string" ? item : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return response.text || response.data?.text || "";
+}
+
+async function runTesseractOcr(imageInput, passLabel, progressPrefix) {
+  if (typeof Tesseract === "undefined") {
+    throw new Error("Tesseract OCR library failed to load.");
+  }
+  const result = await Tesseract.recognize(imageInput, "eng", {
     logger: (message) => {
       if (message?.status === "recognizing text" && Number.isFinite(message.progress)) {
         const pct = Math.round(message.progress * 100);
-        setStatus(`Reading image... ${pct}%`);
+        setStatus(`${progressPrefix} ${passLabel}... ${pct}%`);
       }
     }
   });
   return normalizeOcrText(result?.data?.text || "");
 }
 
+async function runScribeOcr(imageInput, passLabel, progressPrefix) {
+  const scribe = await loadScribeApi();
+  setStatus(`${progressPrefix} ${passLabel}...`);
+  const input = imageInput instanceof HTMLCanvasElement ? imageInput.toDataURL("image/png") : imageInput;
+  const response = await scribe.extractText([input], { ocr: true, checkOrientation: true });
+  return normalizeOcrText(extractTextFromScribeResponse(response));
+}
+
+async function extractWorkoutTextFromImageFile(file, options = {}) {
+  if (!file) return { text: "", debug: "" };
+
+  const selectedEngine = String(options.engine || "auto").toLowerCase();
+  const preprocessEnabled = Boolean(options.preprocess);
+  const ocrInputs = await buildOcrInputs(file, preprocessEnabled);
+  const engines = selectedEngine === "auto" ? ["scribe", "tesseract"] : [selectedEngine];
+  const results = [];
+  const errors = [];
+
+  for (const engine of engines) {
+    for (const input of ocrInputs) {
+      try {
+        const text = engine === "scribe"
+          ? await runScribeOcr(input.image, input.pass, "Reading image (Scribe)")
+          : await runTesseractOcr(input.image, input.pass, "Reading image (Tesseract)");
+        if (text.trim()) {
+          results.push({ engine, pass: input.pass, text });
+        }
+      } catch (error) {
+        errors.push(`${engine}:${input.pass}:${error instanceof Error ? error.message : String(error)}`);
+        if (selectedEngine !== "auto") {
+          throw new Error(
+            engine === "scribe"
+              ? "Scribe OCR is unavailable in this environment. Use Auto or Tesseract."
+              : "Tesseract OCR failed to process this image."
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  const best = pickBestOcrResult(results);
+  if (!best.text) {
+    if (errors.length) {
+      throw new Error(`Could not extract text from the image. OCR errors: ${errors.join(" | ")}`);
+    }
+    throw new Error("Could not extract text from the image.");
+  }
+  return best;
+}
+
 function parseSpeedOrPaceToKmh(text, fallbackUnit = "km") {
   const value = String(text || "").trim().toLowerCase();
   if (!value) return null;
+  const normalizedValue = value
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/(\d),(\d)/g, "$1.$2")
+    .replace(/\bkmh\b/g, "km/h")
+    .replace(/\bkpn\b/g, "kph")
+    .replace(/\bkpr\b/g, "kph");
 
-  const paceMatch = value.match(/(\d{1,2}:\d{2})\s*\/\s*(km|mi|mile|miles)/i);
+  const paceRangeMatch = normalizedValue.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*\/\s*(km|mi|mile|miles)/i);
+  if (paceRangeMatch) {
+    const slow = parsePaceToKmh(paceRangeMatch[1], paceRangeMatch[3]);
+    const fast = parsePaceToKmh(paceRangeMatch[2], paceRangeMatch[3]);
+    if (Number.isFinite(slow) && Number.isFinite(fast)) {
+      return (slow + fast) / 2;
+    }
+  }
+
+  const speedRangeMatch = normalizedValue.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*(kph|km\/h|mph)\b/i);
+  if (speedRangeMatch) {
+    const a = Number(speedRangeMatch[1]);
+    const b = Number(speedRangeMatch[2]);
+    if (Number.isFinite(a) && Number.isFinite(b) && a > 0 && b > 0) {
+      const avg = (a + b) / 2;
+      return /mph/i.test(speedRangeMatch[3]) ? avg * KM_PER_MILE : avg;
+    }
+  }
+
+  const paceMatch = normalizedValue.match(/(\d{1,2}:\d{2})\s*\/\s*(km|mi|mile|miles)/i);
   if (paceMatch) {
     return parsePaceToKmh(paceMatch[1], paceMatch[2]);
   }
 
-  const speedMatch = value.match(/(\d+(?:\.\d+)?)\s*(kph|km\/h|mph)\b/i);
+  const speedMatch = normalizedValue.match(/(\d+(?:\.\d+)?)\s*(kph|km\/h|mph)\b/i);
   if (speedMatch) {
     const n = Number(speedMatch[1]);
     if (!Number.isFinite(n) || n <= 0) return null;
@@ -215,7 +472,7 @@ function parseSpeedOrPaceToKmh(text, fallbackUnit = "km") {
   }
 
   // Bare pace style without explicit unit uses current workout unit as fallback.
-  const barePaceMatch = value.match(/\b(\d{1,2}:\d{2})\b/);
+  const barePaceMatch = normalizedValue.match(/\b(\d{1,2}:\d{2})\b/);
   if (barePaceMatch) {
     return parsePaceToKmh(barePaceMatch[1], fallbackUnit);
   }
@@ -229,12 +486,17 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
     .filter(Boolean);
 
+  const descriptionIndex = lines.findIndex((line) => /^description\b/i.test(String(line).toLowerCase()));
+  const workoutLines = descriptionIndex >= 0 ? lines.slice(descriptionIndex + 1) : lines;
+  const hasStepMarkers = workoutLines.some((line) => /^\d{1,2}$/.test(String(line).trim()));
+
   const rows = [];
   const items = [];
   let currentSection = "run";
   let activeRepeat = null;
   let lastRunRow = null;
-  let inDescriptionSection = false;
+  let pendingDistanceRow = null;
+  let sawFirstStepMarker = !hasStepMarkers;
 
   function closeRepeatIfNeeded() {
     if (activeRepeat && activeRepeat.items.length) {
@@ -267,9 +529,9 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
   }
 
   function parseDistance(text) {
-    const m = text.match(/(\d+(?:\.\d+)?)\s*(km|m|mi|mile|miles)\b/i);
+    const m = text.match(/(\d+(?:[.,]\d+)?)\s*(km|mi|mile|miles|m)(?=\b|at|@)/i);
     if (!m) return null;
-    const value = Number(m[1]);
+    const value = Number(String(m[1]).replace(",", "."));
     if (!Number.isFinite(value) || value <= 0) return null;
     const distanceKm = toKilometers(value, m[2]);
     return Number(distanceKm.toFixed(3));
@@ -282,25 +544,78 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
     return "run";
   }
 
-  for (const rawLine of lines) {
-    const line = rawLine
-      .replace(/\s*\([^)]*\)/g, (m) => m.toLowerCase().includes("repeat") ? m : m)
-      .trim();
-    const lower = line.toLowerCase();
+  function finalizePendingDistanceRow(speedOverride = null) {
+    if (!pendingDistanceRow) return false;
+    const fallbackSpeed = Number.isFinite(speedOverride)
+      ? speedOverride
+      : (pendingDistanceRow.type === "warmup" || pendingDistanceRow.type === "cooldown")
+        ? conversationalSpeedKmh
+        : (Number.isFinite(lastRunRow?.speedKmh) ? lastRunRow.speedKmh : conversationalSpeedKmh);
+    if (!Number.isFinite(fallbackSpeed)) return false;
+    pendingDistanceRow.speedKmh = fallbackSpeed;
+    pushRow(pendingDistanceRow);
+    pendingDistanceRow = null;
+    return true;
+  }
 
-    if (!inDescriptionSection) {
-      if (/^description\b/i.test(lower)) {
-        inDescriptionSection = true;
-        continue;
-      }
-      if (/^(warm-?\s*up|cool\s*down|rest\b|session\b|repeat\s*x\s*\d+)/i.test(lower)) {
-        inDescriptionSection = true;
-      } else {
-        continue;
+  function resolvePendingFromLine(lowerLine, sourceLine) {
+    if (!pendingDistanceRow) return false;
+    const resolvedSpeed = parseSpeedOrPaceToKmh(lowerLine, userUnit);
+    if (!Number.isFinite(resolvedSpeed)) return false;
+    pendingDistanceRow.speedKmh = resolvedSpeed;
+    pendingDistanceRow.source = `${pendingDistanceRow.source} ${sourceLine}`.trim();
+    pushRow(pendingDistanceRow);
+    pendingDistanceRow = null;
+    return true;
+  }
+
+  function extractRepeatMarker(lineLower) {
+    const normalized = lineLower
+      .replace(/[\u00d7\u2715\u2716]/g, "x")
+      .replace(/[\u2013\u2014]/g, "-");
+    const fuzzy = normalized
+      .replace(/[@]/g, "a")
+      .replace(/[1|!]/g, "l")
+      .replace(/[0]/g, "o");
+
+    const patterns = [
+      /\brepe?a?t(?:\s+the\s+following)?\s*x?\s*(\d{1,2})\b/i,
+      /\b(?:x)\s*(\d{1,2})\b/i,
+      /\b(\d{1,2})\s*(?:x)\b/i,
+      /\bepeat(?:\s+the\s+following)?\s*x?\s*(\d{1,2})\b/i
+    ];
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern) || fuzzy.match(pattern);
+      if (match && Number.isFinite(Number(match[1]))) {
+        return {
+          count: Math.max(1, Number(match[1])),
+          endIndex: (match.index || 0) + match[0].length
+        };
       }
     }
 
-    // Drop common UI noise from screenshots.
+    if (/\bepe?a?t\b/i.test(fuzzy) || /\bepeat\b/i.test(fuzzy)) {
+      const nearCount = normalized.match(/(?:x\s*)?(\d{1,2})\b/);
+      if (nearCount && Number.isFinite(Number(nearCount[1]))) {
+        return {
+          count: Math.max(1, Number(nearCount[1])),
+          endIndex: (nearCount.index || 0) + nearCount[0].length
+        };
+      }
+    }
+    return null;
+  }
+  for (const rawLine of workoutLines) {
+    let line = rawLine
+      .replace(/\s*\([^)]*\)/g, (m) => m.toLowerCase().includes("repeat") ? m : m)
+      .trim();
+    let lower = line.toLowerCase();
+
+    if (/^\d{1,2}$/.test(lower)) {
+      sawFirstStepMarker = true;
+      continue;
+    }
+
     if (
       /^(week\s+\d+|schedule|description|outdoor|treadmill|warm-up stretches|add route|link activity|skip workout|start workout|coach |workout notes|synced )/i.test(lower) ||
       /^(sources:|distance\b|time\b|avg pace\b)/i.test(lower) ||
@@ -310,41 +625,58 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
       continue;
     }
 
-    const repeatMatch = lower.match(/repeat\s*x\s*(\d+)/i);
-    if (repeatMatch) {
+    const isSectionHeader = /^(warm[\-\u2013\u2014]?\s*up|cool\s*down|rest\b|session\b)/i.test(lower) || Boolean(extractRepeatMarker(lower));
+    if (hasStepMarkers && !sawFirstStepMarker && !isSectionHeader) {
+      continue;
+    }
+
+    const repeatMarker = extractRepeatMarker(lower);
+    if (repeatMarker) {
+      finalizePendingDistanceRow();
       closeRepeatIfNeeded();
       activeRepeat = {
-        count: Math.max(1, Number(repeatMatch[1]) || 1),
+        count: repeatMarker.count,
         items: [],
         templateRows: []
       };
       currentSection = "run";
-      continue;
+      const tail = line.slice(repeatMarker.endIndex).trim();
+      if (!tail) {
+        continue;
+      }
+      line = tail;
+      lower = line.toLowerCase();
     }
 
-    if (/^warm-?\s*up\b/i.test(lower)) {
+    if (/^warm[\-\u2013\u2014]?\s*up\b/i.test(lower)) {
+      finalizePendingDistanceRow();
       closeRepeatIfNeeded();
       currentSection = "warmup";
       continue;
     }
     if (/^cool\s*down\b/i.test(lower)) {
+      finalizePendingDistanceRow();
       closeRepeatIfNeeded();
       currentSection = "cooldown";
       continue;
     }
     if (/^rest\b/i.test(lower)) {
+      finalizePendingDistanceRow();
       closeRepeatIfNeeded();
       currentSection = "rest";
       continue;
     }
     if (/^session\b/i.test(lower)) {
+      finalizePendingDistanceRow();
       closeRepeatIfNeeded();
       currentSection = "run";
       continue;
     }
 
-    // "No faster than ..." often follows conversational pace lines.
     if (/^no faster than\b/i.test(lower)) {
+      if (resolvePendingFromLine(lower, line)) {
+        continue;
+      }
       const capKmh = parseSpeedOrPaceToKmh(lower, userUnit);
       if (lastRunRow && Number.isFinite(capKmh)) {
         lastRunRow.speedKmh = capKmh;
@@ -353,12 +685,20 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
       continue;
     }
 
-    const restMatch = lower.match(/(\d+)\s*s?\s*walking rest/i);
+    if (resolvePendingFromLine(lower, line)) {
+      continue;
+    }
 
+    const restMatch = lower.match(/(\d+)\s*s?\s*walking rest/i);
     const distanceKm = parseDistance(lower);
     if (distanceKm) {
+      if (!/\b(at|conversational|easy|run|warm|cool)\b|@/i.test(lower)) {
+        continue;
+      }
+
+      finalizePendingDistanceRow();
       let speedKmh = null;
-      if (/conversational pace/i.test(lower)) {
+      if (/conversational(?:\s+pace)?/i.test(lower)) {
         speedKmh = conversationalSpeedKmh;
         const capKmh = parseSpeedOrPaceToKmh(lower, userUnit);
         if (Number.isFinite(capKmh)) speedKmh = capKmh;
@@ -366,19 +706,24 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
         speedKmh = parseSpeedOrPaceToKmh(lower, userUnit);
       }
 
+      const rowType = sectionTypeForCurrent();
+      const newRow = {
+        type: rowType === "rest" ? "walkrest" : rowType,
+        distance: distanceKm,
+        speedKmh,
+        source: line,
+        incline: rowType === "walkrest" ? null : defaultIncline
+      };
+
       if (Number.isFinite(speedKmh)) {
-        const rowType = sectionTypeForCurrent();
-        pushRow({
-          type: rowType === "rest" ? "walkrest" : rowType,
-          distance: distanceKm,
-          speedKmh,
-          source: line,
-          incline: rowType === "walkrest" ? null : defaultIncline
-        });
+        pushRow(newRow);
+      } else {
+        pendingDistanceRow = { ...newRow, speedKmh: null };
       }
     }
 
     if (restMatch) {
+      finalizePendingDistanceRow();
       const seconds = Number(restMatch[1]);
       if (Number.isFinite(seconds) && seconds > 0) {
         pushRow({
@@ -389,14 +734,13 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
           incline: null
         });
       }
-      continue;
     }
   }
 
+  finalizePendingDistanceRow();
   closeRepeatIfNeeded();
   return { rows, items };
 }
-
 function expandRepeatFollowing(text) {
   let output = text;
   const repeatRegex = /Repeat the following\s+(\d+)x:\s*-{5,}\s*([\s\S]*?)\s*-{5,}/i;
@@ -1263,6 +1607,14 @@ function setStatus(message, isError = false) {
   statusOutput.className = isError ? "status error" : "status";
 }
 
+function setOcrDebugText(text) {
+  if (!ocrDebugWrap || !ocrDebugOutput) return;
+  const value = String(text || "").trim();
+  ocrDebugOutput.value = value;
+  ocrDebugWrap.hidden = !value;
+  ocrDebugWrap.open = Boolean(value);
+}
+
 function updateEditParsedButton() {
   const editableMode = inputMode === "text" || inputMode === "image";
   const items = inputMode === "image" ? lastParsedItemsByMode.image : lastParsedItemsByMode.text;
@@ -1653,6 +2005,9 @@ parseBtn.addEventListener("click", async () => {
   let rows = [];
   let displayItems = [];
   let parsedSourceText = text;
+  if (inputMode !== "image") {
+    setOcrDebugText("");
+  }
 
   if (inputMode === "build") {
     const builderInputMode = currentBuilderInputMode();
@@ -1671,16 +2026,24 @@ parseBtn.addEventListener("click", async () => {
   } else if (inputMode === "image") {
     const imageFile = workoutImageInput?.files?.[0];
     if (!imageFile) {
+      setOcrDebugText("");
       setStatus("Upload a workout screenshot first.", true);
       return;
     }
     try {
-      parsedSourceText = await extractWorkoutTextFromImageFile(imageFile);
+      const ocrResult = await extractWorkoutTextFromImageFile(imageFile, {
+        engine: currentOcrEngine(),
+        preprocess: shouldPreprocessOcr()
+      });
+      parsedSourceText = ocrResult.text || "";
+      setOcrDebugText(ocrResult.debug || parsedSourceText);
     } catch (error) {
+      setOcrDebugText("");
       setStatus(error instanceof Error ? error.message : "Failed to read workout image.", true);
       return;
     }
     if (!parsedSourceText) {
+      setOcrDebugText("");
       setStatus("Could not extract text from the image.", true);
       return;
     }
@@ -1770,5 +2133,6 @@ Repeat the following 2x:
 ----------
 
 2km cool down at a conversational pace (or slower!)`;
+configureOcrEngineOptionsForHost();
 updatePaceLabels(currentUserUnit());
 setInputMode("text");

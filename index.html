@@ -39,6 +39,26 @@
           <label class="form-label" for="workoutImageInput">Runna workout image</label>
           <input class="form-control" id="workoutImageInput" type="file" accept="image/*">
           <p class="mode-note mt-2">Upload a screenshot from Runna and click Generate workout.</p>
+          <div class="row g-2 mt-1">
+            <div class="col-md-6">
+              <label class="form-label" for="ocrEngineSelect">OCR engine</label>
+              <select class="form-select" id="ocrEngineSelect">
+                <option value="auto" selected>Auto (Scribe then Tesseract)</option>
+                <option value="scribe">Scribe</option>
+                <option value="tesseract">Tesseract</option>
+              </select>
+            </div>
+            <div class="col-md-6 d-flex align-items-end">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="ocrPreprocess" checked>
+                <label class="form-check-label" for="ocrPreprocess">Improve OCR (crop + upscale + contrast)</label>
+              </div>
+            </div>
+          </div>
+          <details id="ocrDebugWrap" class="mt-2" hidden>
+            <summary>OCR extracted text (debug)</summary>
+            <textarea class="form-control mt-2" id="ocrDebugOutput" rows="8" readonly></textarea>
+          </details>
         </div>
 
         <div id="buildInputSection" class="mode-section">
