@@ -44,7 +44,6 @@
         <div id="buildInputSection" class="mode-section">
           <label class="form-label">Build your own workout</label>
           <p class="mode-note mb-2">Add blocks and drag them in Parsed rows. Drop blocks inside Repeat blocks to nest them.</p>
-          <button class="btn btn-primary" id="addBlockBtn" type="button">Add block</button>
         </div>
 
         <div class="options-header mt-4">
@@ -63,6 +62,17 @@
             </div>
           </div>
 
+          <div class="col-md-6 field" id="builderInputModeField" hidden>
+            <label class="form-label">Run input</label>
+            <div class="unit-segment" role="radiogroup" aria-label="Build input mode">
+              <input id="buildInputPace" name="buildInputMode" type="radio" value="pace" checked>
+              <input id="buildInputSpeed" name="buildInputMode" type="radio" value="speed">
+              <span class="unit-thumb" aria-hidden="true"></span>
+              <label for="buildInputPace">Pace</label>
+              <label for="buildInputSpeed">Speed</label>
+            </div>
+          </div>
+
           <div class="col-md-6 field">
             <label class="form-label" for="walkingTarget" id="walkingTargetLabel">Walking pace (mm:ss/km)</label>
             <input class="form-control" id="walkingTarget" type="text" value="15:00">
@@ -78,7 +88,7 @@
             <input class="form-control" id="conversationalTarget" type="text" value="8:06">
           </div>
 
-          <div class="col-12 field">
+          <div class="col-12 field" id="optionsGenerateWrap">
             <div class="d-grid d-md-inline-flex">
               <button class="btn btn-primary" id="parseBtn" type="button">Generate workout</button>
             </div>
@@ -90,7 +100,10 @@
 
     <section class="card shadow-sm mb-3">
       <div class="card-body">
-      <h2 class="h3 section-title">Parsed rows</h2>
+      <div class="section-header">
+        <h2 class="h3 section-title">Parsed rows</h2>
+        <button class="btn btn-outline-secondary btn-sm" id="editParsedBtn" type="button" hidden>Edit</button>
+      </div>
       <div id="rowsOutput" class="rows-output mt-3"></div>
       </div>
     </section>
@@ -109,7 +122,10 @@
             <label for="xmlUnitMiles">miles</label>
           </div>
         </div>
-        <button class="btn btn-primary" id="downloadBtn" type="button" disabled>Download XML</button>
+        <div class="xml-actions">
+          <button class="btn btn-primary" id="parseXmlBtn" type="button" hidden>Generate XML</button>
+          <button class="btn btn-primary" id="downloadBtn" type="button" disabled>Download XML</button>
+        </div>
       </div>
       <textarea class="form-control xml-output" id="xmlOutput" rows="14" readonly></textarea>
       <p id="status" class="status"></p>

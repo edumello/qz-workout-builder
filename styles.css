@@ -169,6 +169,13 @@ body {
   width: min(260px, 100%);
 }
 
+.xml-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .unit-segment {
   position: relative;
   display: grid;
@@ -211,14 +218,17 @@ body {
 }
 
 #unitMiles:checked ~ .unit-thumb,
-#xmlUnitMiles:checked ~ .unit-thumb {
+#xmlUnitMiles:checked ~ .unit-thumb,
+#buildInputSpeed:checked ~ .unit-thumb {
   transform: translateX(100%);
 }
 
 #unitKm:checked ~ label[for="unitKm"],
 #unitMiles:checked ~ label[for="unitMiles"],
 #xmlUnitKm:checked ~ label[for="xmlUnitKm"],
-#xmlUnitMiles:checked ~ label[for="xmlUnitMiles"] {
+#xmlUnitMiles:checked ~ label[for="xmlUnitMiles"],
+#buildInputPace:checked ~ label[for="buildInputPace"],
+#buildInputSpeed:checked ~ label[for="buildInputSpeed"] {
   color: #fff;
 }
 
@@ -350,6 +360,13 @@ body {
   font-weight: 700;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .repeat-block {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -412,6 +429,22 @@ body {
   gap: 8px;
 }
 
+.rows-output[data-view="parsed-text"] .repeat-block-repeat > .repeat-body {
+  position: relative;
+  padding-left: 14px;
+}
+
+.rows-output[data-view="parsed-text"] .repeat-block-repeat > .repeat-body::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.2);
+}
+
 .row-item {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -457,6 +490,10 @@ body {
   }
 
   .xml-toolbar {
+    width: 100%;
+  }
+
+  .xml-actions {
     width: 100%;
   }
 
