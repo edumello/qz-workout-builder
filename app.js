@@ -190,36 +190,12 @@ function normalizeOcrText(raw) {
 
 function currentOcrEngine() {
   const value = String(ocrEngineSelect?.value || "auto").toLowerCase();
-  if (value === "tesseract") return "tesseract";
-  if (value === "scribe") return isGitHubPagesHost() ? "tesseract" : "scribe";
-  return isGitHubPagesHost() ? "tesseract" : "auto";
+  if (value === "scribe" || value === "tesseract") return value;
+  return "auto";
 }
 
 function shouldPreprocessOcr() {
   return Boolean(ocrPreprocessInput?.checked);
-}
-
-function isGitHubPagesHost() {
-  const host = String(window.location.hostname || "").toLowerCase();
-  return host === "github.io" || host.endsWith(".github.io");
-}
-
-function configureOcrEngineOptionsForHost() {
-  if (!ocrEngineSelect) return;
-  const autoOption = ocrEngineSelect.querySelector('option[value="auto"]');
-  const scribeOption = ocrEngineSelect.querySelector('option[value="scribe"]');
-  if (!isGitHubPagesHost()) return;
-
-  if (autoOption) {
-    autoOption.textContent = "Auto (Tesseract on GitHub Pages)";
-  }
-  if (scribeOption) {
-    scribeOption.disabled = true;
-    scribeOption.textContent = "Scribe (local only)";
-    if (ocrEngineSelect.value === "scribe") {
-      ocrEngineSelect.value = "auto";
-    }
-  }
 }
 
 function scoreOcrText(text) {
@@ -393,11 +369,12 @@ async function extractWorkoutTextFromImageFile(file, options = {}) {
   const selectedEngine = String(options.engine || "auto").toLowerCase();
   const preprocessEnabled = Boolean(options.preprocess);
   const ocrInputs = await buildOcrInputs(file, preprocessEnabled);
-  const engines = selectedEngine === "auto" ? ["scribe", "tesseract"] : [selectedEngine];
+  const engines = selectedEngine === "tesseract" ? ["tesseract"] : ["scribe", "tesseract"];
   const results = [];
   const errors = [];
 
   for (const engine of engines) {
+    let engineSucceeded = false;
     for (const input of ocrInputs) {
       try {
         const text = engine === "scribe"
@@ -405,18 +382,18 @@ async function extractWorkoutTextFromImageFile(file, options = {}) {
           : await runTesseractOcr(input.image, input.pass, "Reading image (Tesseract)");
         if (text.trim()) {
           results.push({ engine, pass: input.pass, text });
+          engineSucceeded = true;
         }
       } catch (error) {
         errors.push(`${engine}:${input.pass}:${error instanceof Error ? error.message : String(error)}`);
-        if (selectedEngine !== "auto") {
-          throw new Error(
-            engine === "scribe"
-              ? "Scribe OCR is unavailable in this environment. Use Auto or Tesseract."
-              : "Tesseract OCR failed to process this image."
-          );
+        if (selectedEngine === "tesseract") {
+          throw new Error("Tesseract OCR failed to process this image.");
         }
         break;
       }
+    }
+    if (selectedEngine === engine && engineSucceeded && selectedEngine !== "auto") {
+      break;
     }
   }
 
@@ -2133,6 +2110,5 @@ Repeat the following 2x:
 ----------
 
 2km cool down at a conversational pace (or slower!)`;
-configureOcrEngineOptionsForHost();
 updatePaceLabels(currentUserUnit());
 setInputMode("text");
