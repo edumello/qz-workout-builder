@@ -49,7 +49,8 @@ label {
 }
 
 textarea,
-input {
+input,
+select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -106,6 +107,12 @@ button:disabled {
   border-radius: 8px;
   padding: 9px 10px;
   font-size: 14px;
+}
+
+.row-source {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .status {
