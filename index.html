@@ -17,14 +17,13 @@
 
       <div class="options">
         <div class="field">
-          <label for="unitToggle">Unit</label>
-          <div class="toggle-wrap">
-            <span id="unitKmLabel">km</span>
-            <label class="switch" for="unitToggle" aria-label="Toggle between km and miles">
-              <input id="unitToggle" type="checkbox">
-              <span class="slider"></span>
-            </label>
-            <span id="unitMilesLabel">miles</span>
+          <label>Unit</label>
+          <div class="unit-segment" role="radiogroup" aria-label="Unit">
+            <input id="unitKm" name="unit" type="radio" value="km" checked>
+            <input id="unitMiles" name="unit" type="radio" value="mi">
+            <span class="unit-thumb" aria-hidden="true"></span>
+            <label for="unitKm">km</label>
+            <label for="unitMiles">miles</label>
           </div>
         </div>
 

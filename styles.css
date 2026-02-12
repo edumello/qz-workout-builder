@@ -69,52 +69,58 @@ textarea {
   margin-top: 12px;
 }
 
-.toggle-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
+.field {
+  min-width: 0;
 }
 
-.switch {
+.unit-segment {
   position: relative;
-  display: inline-block;
-  width: 50px;
-  height: 28px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #edf2f7;
+  overflow: hidden;
+  max-width: 260px;
+  min-height: 40px;
 }
 
-.switch input {
+.unit-segment input {
   opacity: 0;
   width: 0;
   height: 0;
-}
-
-.slider {
   position: absolute;
-  inset: 0;
-  background: #c9d4df;
-  border-radius: 999px;
-  transition: 0.2s;
 }
 
-.slider::before {
-  content: "";
+.unit-thumb {
   position: absolute;
-  height: 22px;
-  width: 22px;
-  left: 3px;
-  top: 3px;
-  background: #fff;
-  border-radius: 50%;
-  transition: 0.2s;
-}
-
-.switch input:checked + .slider {
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc(50% - 2px);
   background: var(--accent);
+  border-radius: 999px;
+  transition: transform 0.2s ease;
 }
 
-.switch input:checked + .slider::before {
-  transform: translateX(22px);
+.unit-segment label {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+#unitMiles:checked ~ .unit-thumb {
+  transform: translateX(100%);
+}
+
+#unitKm:checked ~ label[for="unitKm"],
+#unitMiles:checked ~ label[for="unitMiles"] {
+  color: #fff;
 }
 
 .actions {

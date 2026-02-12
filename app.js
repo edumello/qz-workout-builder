@@ -1,7 +1,6 @@
 const workoutInput = document.getElementById("workoutInput");
-const unitToggleInput = document.getElementById("unitToggle");
-const unitKmLabel = document.getElementById("unitKmLabel");
-const unitMilesLabel = document.getElementById("unitMilesLabel");
+const unitKmInput = document.getElementById("unitKm");
+const unitMilesInput = document.getElementById("unitMiles");
 const walkingTargetInput = document.getElementById("walkingTarget");
 const conversationalTargetInput = document.getElementById("conversationalTarget");
 const defaultInclineInput = document.getElementById("defaultIncline");
@@ -22,7 +21,7 @@ function normalizePaceUnit(unitText) {
 }
 
 function currentUserUnit() {
-  return unitToggleInput.checked ? "mi" : "km";
+  return unitMilesInput.checked ? "mi" : "km";
 }
 
 function parsePaceToKmh(paceText, unitText) {
@@ -209,8 +208,6 @@ function updatePaceLabels(unit) {
   const suffix = unit === "mi" ? "mi" : "km";
   walkingTargetLabel.textContent = `Walking pace (mm:ss/${suffix})`;
   conversationalTargetLabel.textContent = `Conversational pace (mm:ss/${suffix})`;
-  unitKmLabel.style.fontWeight = unit === "km" ? "700" : "400";
-  unitMilesLabel.style.fontWeight = unit === "mi" ? "700" : "400";
 }
 
 function convertUserPaceInputs(prevUnit, nextUnit) {
@@ -224,12 +221,15 @@ function convertUserPaceInputs(prevUnit, nextUnit) {
   }
 }
 
-unitToggleInput.addEventListener("change", () => {
+function onUnitChange() {
   const nextUnit = currentUserUnit();
   const prevUnit = nextUnit === "mi" ? "km" : "mi";
   convertUserPaceInputs(prevUnit, nextUnit);
   updatePaceLabels(nextUnit);
-});
+}
+
+unitKmInput.addEventListener("change", onUnitChange);
+unitMilesInput.addEventListener("change", onUnitChange);
 
 parseBtn.addEventListener("click", () => {
   const text = workoutInput.value.trim();

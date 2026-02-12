@@ -1,0 +1,28 @@
+{
+  "name": "qz-workout-builder",
+  "version": "1.0.0",
+  "description": "Static web app to convert Runna workout text into `qdomyos-zwift` treadmill XML rows.",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "serve .",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edumello/qz-workout-builder.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/edumello/qz-workout-builder/issues"
+  },
+  "homepage": "https://github.com/edumello/qz-workout-builder#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "serve": "^14.2.5"
+  }
+}
