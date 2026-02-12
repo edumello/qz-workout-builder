@@ -1,5 +1,5 @@
 const workoutInput = document.getElementById("workoutInput");
-const buildInput = document.getElementById("buildInput");
+const addBlockBtn = document.getElementById("addBlockBtn");
 const modeTextBtn = document.getElementById("modeTextBtn");
 const modeImageBtn = document.getElementById("modeImageBtn");
 const modeBuildBtn = document.getElementById("modeBuildBtn");
@@ -23,6 +23,9 @@ const xmlUnitMilesInput = document.getElementById("xmlUnitMiles");
 
 const KM_PER_MILE = 1.60934;
 let inputMode = "text";
+let builderIdCounter = 1;
+let builderBlocks = [];
+let builderSortables = [];
 
 function normalizePaceUnit(unitText) {
   if (!unitText) return "km";
@@ -43,11 +46,18 @@ function parsePaceToKmh(paceText, unitText) {
   if (!match) return null;
   const mins = Number(match[1]);
   const secs = Number(match[2]);
+  if (secs > 59) return null;
   const totalMinutes = mins + secs / 60;
   if (totalMinutes <= 0) return null;
   const unit = normalizePaceUnit(unitText);
   const distance = unit === "mi" ? KM_PER_MILE : 1;
   return (60 / totalMinutes) * distance;
+}
+
+function normalizePaceInput(paceText, unitText) {
+  const kmh = parsePaceToKmh(String(paceText || "").trim(), unitText);
+  if (!Number.isFinite(kmh)) return null;
+  return kmhToPace(kmh, unitText);
 }
 
 function kmhToPace(kmh, unitText) {
@@ -127,6 +137,441 @@ function toKilometers(value, unit) {
   const n = Number(value);
   if (unit.toLowerCase() === "m") return n / 1000;
   return n;
+}
+
+function formatUnitNumber(value, decimals = 3) {
+  if (!Number.isFinite(value)) return "";
+  return Number(value.toFixed(decimals)).toString();
+}
+
+function formatBuilderDistanceValue(distanceInUserUnit, userUnit) {
+  return formatUnitNumber(distanceInUserUnit, 3);
+}
+
+function parseBuilderDistanceValue(rawValue, fallbackUnit) {
+  const text = String(rawValue || "").trim().toLowerCase();
+  const match = text.match(/^([0-9]*\.?[0-9]+)\s*(km|mi|mile|miles)?$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const unit = match[2] ? normalizePaceUnit(match[2]) : normalizePaceUnit(fallbackUnit);
+  const distanceKm = unit === "mi" ? value * KM_PER_MILE : value;
+  return {
+    distanceKm,
+    valueInUnit: unit === "mi" ? distanceKm / KM_PER_MILE : distanceKm,
+    unit
+  };
+}
+
+function convertBuilderUnits(blocks, prevUnit, nextUnit) {
+  return blocks.map((block) => {
+    if (block.type === "repeat") {
+      return {
+        ...block,
+        children: convertBuilderUnits(block.children || [], prevUnit, nextUnit)
+      };
+    }
+
+    let nextBlock = { ...block };
+    if (nextBlock.targetType === "distance") {
+      const parsed = parseBuilderDistanceValue(nextBlock.value, prevUnit);
+      if (parsed) {
+        const converted = normalizePaceUnit(nextUnit) === "mi"
+          ? parsed.distanceKm / KM_PER_MILE
+          : parsed.distanceKm;
+        nextBlock.value = formatBuilderDistanceValue(converted, nextUnit);
+      }
+    }
+
+    if (nextBlock.type !== "rest" && nextBlock.pace) {
+      const kmh = parsePaceToKmh(nextBlock.pace, prevUnit);
+      if (Number.isFinite(kmh)) {
+        nextBlock.pace = kmhToPace(kmh, nextUnit);
+      }
+    }
+    return nextBlock;
+  });
+}
+
+function newBuilderBlock(type = "run", userUnit = currentUserUnit()) {
+  const id = `blk_${builderIdCounter++}`;
+  if (type === "repeat") {
+    return {
+      id,
+      type: "repeat",
+      repeats: 2,
+      children: []
+    };
+  }
+
+  return {
+    id,
+    type,
+    targetType: type === "rest" ? "time" : "distance",
+    value: type === "rest" ? "00:01:00" : formatBuilderDistanceValue(1, userUnit),
+    pace: type === "rest" ? "" : "6:00"
+  };
+}
+
+function cloneBuilderBlocks(blocks) {
+  return blocks.map((block) => {
+    if (block.type === "repeat") {
+      return {
+        ...block,
+        children: cloneBuilderBlocks(block.children || [])
+      };
+    }
+    return { ...block };
+  });
+}
+
+function parseDurationInputToSeconds(input) {
+  if (!input) return null;
+  const text = String(input).trim();
+  if (!text) return null;
+  const match = text.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  const ss = Number(match[3]);
+  if (mm > 59 || ss > 59) return null;
+  return hh * 3600 + mm * 60 + ss;
+}
+
+function getBlockTypeLabel(type) {
+  if (type === "warmup") return "Warm-Up";
+  if (type === "cooldown") return "Cool Down";
+  if (type === "rest") return "Rest";
+  if (type === "repeat") return "Repeat";
+  return "Run";
+}
+
+function toRowType(blockType) {
+  if (blockType === "warmup") return "warmup";
+  if (blockType === "cooldown") return "cooldown";
+  if (blockType === "rest") return "walkrest";
+  return "run";
+}
+
+function findBlockById(blocks, id) {
+  for (const block of blocks) {
+    if (block.id === id) return block;
+    if (block.type === "repeat") {
+      const found = findBlockById(block.children || [], id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function removeBlockById(blocks, id) {
+  const result = [];
+  let removed = null;
+  for (const block of blocks) {
+    if (block.id === id) {
+      removed = block;
+      continue;
+    }
+    if (block.type === "repeat") {
+      const nested = removeBlockById(block.children || [], id);
+      if (nested.removed) {
+        removed = nested.removed;
+      }
+      result.push({
+        ...block,
+        children: nested.blocks
+      });
+    } else {
+      result.push(block);
+    }
+  }
+  return { blocks: result, removed };
+}
+
+function insertBlockByParentId(blocks, parentId, index, blockToInsert) {
+  if (parentId === "root") {
+    const copy = blocks.slice();
+    copy.splice(index, 0, blockToInsert);
+    return copy;
+  }
+  return blocks.map((block) => {
+    if (block.id === parentId && block.type === "repeat") {
+      const children = (block.children || []).slice();
+      children.splice(index, 0, blockToInsert);
+      return { ...block, children };
+    }
+    if (block.type === "repeat") {
+      return {
+        ...block,
+        children: insertBlockByParentId(block.children || [], parentId, index, blockToInsert)
+      };
+    }
+    return block;
+  });
+}
+
+function updateBlockById(blocks, id, updater) {
+  return blocks.map((block) => {
+    if (block.id === id) return updater(block);
+    if (block.type === "repeat") {
+      return {
+        ...block,
+        children: updateBlockById(block.children || [], id, updater)
+      };
+    }
+    return block;
+  });
+}
+
+function isDescendant(parentBlock, targetId) {
+  if (!parentBlock || parentBlock.type !== "repeat") return false;
+  for (const child of parentBlock.children || []) {
+    if (child.id === targetId) return true;
+    if (child.type === "repeat" && isDescendant(child, targetId)) return true;
+  }
+  return false;
+}
+
+function moveBuilderBlock(sourceParentId, sourceIndex, targetParentId, targetIndex, draggedId) {
+  const rootClone = cloneBuilderBlocks(builderBlocks);
+  const sourceList = sourceParentId === "root"
+    ? rootClone
+    : (findBlockById(rootClone, sourceParentId)?.children || []);
+  if (!sourceList[sourceIndex]) return;
+  const draggedBlock = sourceList[sourceIndex];
+
+  if (draggedId && draggedBlock.id !== draggedId) return;
+  if (draggedBlock.type === "repeat" && targetParentId !== "root" && isDescendant(draggedBlock, targetParentId)) {
+    return;
+  }
+
+  sourceList.splice(sourceIndex, 1);
+  const targetList = targetParentId === "root"
+    ? rootClone
+    : (findBlockById(rootClone, targetParentId)?.children || []);
+  targetList.splice(targetIndex, 0, draggedBlock);
+  builderBlocks = rootClone;
+}
+
+function blockToRows(block, userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline) {
+  if (block.type === "repeat") {
+    const repeats = Math.max(1, Number(block.repeats) || 1);
+    const rows = [];
+    for (let i = 0; i < repeats; i += 1) {
+      for (const child of block.children || []) {
+        rows.push(...blockToRows(child, userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline));
+      }
+    }
+    return rows;
+  }
+
+  const rowType = toRowType(block.type);
+  const targetType = block.targetType || (block.type === "rest" ? "time" : "distance");
+  const pace = block.pace || "";
+  const paceSpeed = parsePaceToKmh(pace, userUnit);
+  const speedKmh = block.type === "rest"
+    ? walkingSpeedKmh
+    : (paceSpeed || (block.type === "run" ? conversationalSpeedKmh : conversationalSpeedKmh));
+
+  if (targetType === "distance") {
+    const parsedDistance = parseBuilderDistanceValue(block.value, userUnit);
+    if (!parsedDistance) return [];
+    const distanceKm = parsedDistance.distanceKm;
+    const unitLabel = normalizePaceUnit(userUnit) === "mi" ? "mi" : "km";
+    const displayDistance = normalizePaceUnit(userUnit) === "mi"
+      ? distanceKm / KM_PER_MILE
+      : distanceKm;
+    const source = `${formatUnitNumber(displayDistance, 3)} ${unitLabel} ${getBlockTypeLabel(block.type).toLowerCase()}${block.type !== "rest" ? ` at ${pace}/${unitLabel}` : ""}`;
+    return [{
+      type: rowType,
+      distance: Number(distanceKm.toFixed(3)),
+      speedKmh,
+      source,
+      incline: rowType === "walkrest" ? null : defaultIncline
+    }];
+  }
+
+  const seconds = parseDurationInputToSeconds(block.value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return [];
+  const unitLabel = normalizePaceUnit(userUnit) === "mi" ? "mi" : "km";
+  const source = `${block.value} ${getBlockTypeLabel(block.type).toLowerCase()}${block.type !== "rest" ? ` at ${pace}/${unitLabel}` : ""}`;
+  return [{
+    type: rowType,
+    duration: secondsToDuration(seconds),
+    speedKmh,
+    source,
+    incline: null
+  }];
+}
+
+function buildRowsFromBuilder(userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline) {
+  const rows = [];
+  for (const block of builderBlocks) {
+    rows.push(...blockToRows(block, userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline));
+  }
+  return rows;
+}
+
+function findFirstInvalidBuilderPace(blocks, userUnit) {
+  for (const block of blocks) {
+    if (block.type === "repeat") {
+      const nested = findFirstInvalidBuilderPace(block.children || [], userUnit);
+      if (nested) return nested;
+      continue;
+    }
+    if (block.type !== "rest" && !normalizePaceInput(block.pace, userUnit)) {
+      return block;
+    }
+  }
+  return null;
+}
+
+function destroyBuilderSortables() {
+  for (const sortable of builderSortables) {
+    sortable.destroy();
+  }
+  builderSortables = [];
+}
+
+function getHeaderClassForBuilder(type) {
+  if (type === "warmup") return "repeat-header-warm-up";
+  if (type === "cooldown") return "repeat-header-cool-down";
+  if (type === "rest") return "repeat-header-rest";
+  if (type === "repeat") return "repeat-header-repeat";
+  return "repeat-header-run";
+}
+
+function getBlockClassForBuilder(type) {
+  if (type === "warmup") return "repeat-block-warm-up";
+  if (type === "cooldown") return "repeat-block-cool-down";
+  if (type === "rest") return "repeat-block-rest";
+  if (type === "repeat") return "repeat-block-repeat";
+  return "repeat-block-run";
+}
+
+function renderBuilderBlocks(blocks, parentId = "root") {
+  if (!blocks.length) {
+    return `<div class="builder-empty">No blocks yet. Click "Add block".</div>`;
+  }
+
+  return blocks.map((block) => {
+    const headerClass = getHeaderClassForBuilder(block.type);
+    const blockClass = getBlockClassForBuilder(block.type);
+    const isRepeat = block.type === "repeat";
+
+    const typeOptions = [
+      ["warmup", "Warm-Up"],
+      ["run", "Run"],
+      ["rest", "Rest"],
+      ["repeat", "Repeat"],
+      ["cooldown", "Cool Down"]
+    ]
+      .map(([value, label]) => `<option value="${value}" ${block.type === value ? "selected" : ""}>${label}</option>`)
+      .join("");
+
+    const targetTypeOptions = `
+      <option value="distance" ${block.targetType === "distance" ? "selected" : ""}>Distance</option>
+      <option value="time" ${block.targetType === "time" ? "selected" : ""}>Time</option>
+    `;
+
+    const repeatControls = `
+      <div class="builder-grid">
+        <label class="builder-field">
+          <span>Repeats</span>
+          <input type="number" min="1" data-builder-id="${block.id}" data-field="repeats" value="${block.repeats || 2}">
+        </label>
+        <button class="btn btn-outline-primary btn-sm mt-auto" type="button" data-action="add-child" data-builder-id="${block.id}">Add inner block</button>
+      </div>
+      <div class="builder-children" data-parent-id="${block.id}">
+        ${renderBuilderBlocks(block.children || [], block.id)}
+      </div>
+    `;
+
+    const rowControls = `
+      <div class="builder-grid">
+        <label class="builder-field">
+          <span>Distance / Time</span>
+          <select data-builder-id="${block.id}" data-field="targetType">${targetTypeOptions}</select>
+        </label>
+        <label class="builder-field">
+          <span>${block.targetType === "distance" ? `Distance value (${currentUserUnit()})` : "Time value (HH:MM:SS)"}</span>
+          <input type="text" data-builder-id="${block.id}" data-field="value" value="${block.value || ""}" placeholder="${block.targetType === "distance" ? "e.g. 5" : "e.g. 00:05:00"}">
+        </label>
+        ${block.type !== "rest" ? `
+        <label class="builder-field">
+          <span>Pace (mm:ss/${currentUserUnit()})</span>
+          <input type="text" data-builder-id="${block.id}" data-field="pace" value="${block.pace || ""}" placeholder="e.g. 6:00" pattern="\\d{1,2}:[0-5]\\d" title="Use mm:ss (seconds 00-59)">
+        </label>` : ""}
+      </div>
+    `;
+
+    return `
+      <div class="repeat-block ${blockClass} builder-block" data-id="${block.id}" data-parent-id="${parentId}">
+        <div class="repeat-header ${headerClass} builder-header">
+          <div class="builder-header-controls">
+            <select class="builder-type-select" data-builder-id="${block.id}" data-field="type" aria-label="Block type">
+              ${typeOptions}
+            </select>
+            <button class="btn btn-sm btn-light builder-remove" type="button" data-action="remove" data-builder-id="${block.id}">Remove</button>
+          </div>
+          <span class="builder-drag-indicator" aria-hidden="true"></span>
+        </div>
+        <div class="repeat-body builder-body">
+          ${isRepeat ? repeatControls : rowControls}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function initializeBuilderSortables() {
+  destroyBuilderSortables();
+  if (typeof Sortable === "undefined") {
+    setStatus("Drag and drop library did not load. Reload the page.", true);
+    return;
+  }
+  const containers = rowsOutput.querySelectorAll(".builder-list, .builder-children");
+  containers.forEach((container) => {
+    const sortable = Sortable.create(container, {
+      group: "builderBlocks",
+      handle: ".builder-header",
+      filter: ".builder-type-select, .builder-remove",
+      preventOnFilter: false,
+      animation: 150,
+      fallbackOnBody: true,
+      swapThreshold: 0.65,
+      onMove(evt) {
+        const draggedId = evt.dragged?.dataset?.id;
+        const toParent = evt.to?.dataset?.parentId || "root";
+        const draggedBlock = findBlockById(builderBlocks, draggedId);
+        if (!draggedBlock || draggedBlock.type !== "repeat") return true;
+        return !isDescendant(draggedBlock, toParent);
+      },
+      onEnd(evt) {
+        const sourceParentId = evt.from.dataset.parentId || "root";
+        const targetParentId = evt.to.dataset.parentId || "root";
+        moveBuilderBlock(sourceParentId, evt.oldIndex, targetParentId, evt.newIndex, evt.item.dataset.id);
+        renderBuilderEditor();
+      }
+    });
+    builderSortables.push(sortable);
+  });
+}
+
+function renderBuilderEditor() {
+  const html = `
+    <div class="builder-wrap">
+      <div class="builder-toolbar">
+        <button class="btn btn-primary btn-sm" type="button" id="addBlockInRowsBtn">Add block</button>
+        <span class="mode-note">Drag blocks to reorder. Drop into Repeat blocks to nest.</span>
+      </div>
+      <div class="builder-list" data-parent-id="root">
+        ${renderBuilderBlocks(builderBlocks)}
+      </div>
+    </div>
+  `;
+  rowsOutput.innerHTML = html;
+  initializeBuilderSortables();
 }
 
 function parseWorkout(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline, options = {}) {
@@ -392,6 +837,19 @@ function setInputMode(mode) {
     item.button.setAttribute("aria-selected", selected ? "true" : "false");
     item.section.classList.toggle("active", selected);
   }
+
+  if (mode === "build") {
+    if (!builderBlocks.length) {
+      const unit = currentUserUnit();
+      builderBlocks = [newBuilderBlock("warmup", unit), newBuilderBlock("run", unit), newBuilderBlock("cooldown", unit)];
+    }
+    renderBuilderEditor();
+    setStatus("Build mode active. Add/drag blocks, then click Generate workout.");
+  } else if (mode === "text") {
+    destroyBuilderSortables();
+  } else {
+    rowsOutput.innerHTML = "<p>Switch to text mode and click Generate workout to preview parsed rows.</p>";
+  }
 }
 
 function updatePaceLabels(unit) {
@@ -416,6 +874,10 @@ function onUnitChange() {
   const prevUnit = nextUnit === "mi" ? "km" : "mi";
   convertUserPaceInputs(prevUnit, nextUnit);
   updatePaceLabels(nextUnit);
+  if (inputMode === "build" && builderBlocks.length) {
+    builderBlocks = convertBuilderUnits(builderBlocks, prevUnit, nextUnit);
+    renderBuilderEditor();
+  }
 }
 
 unitKmInput.addEventListener("change", onUnitChange);
@@ -423,19 +885,155 @@ unitMilesInput.addEventListener("change", onUnitChange);
 modeTextBtn.addEventListener("click", () => setInputMode("text"));
 modeImageBtn.addEventListener("click", () => setInputMode("image"));
 modeBuildBtn.addEventListener("click", () => setInputMode("build"));
+addBlockBtn.addEventListener("click", () => {
+  builderBlocks.push(newBuilderBlock("run", currentUserUnit()));
+  if (inputMode === "build") {
+    renderBuilderEditor();
+  }
+});
 xmlUnitKmInput.addEventListener("change", () => {
-  if (inputMode === "text" && xmlOutput.value.trim()) {
+  if ((inputMode === "text" || inputMode === "build") && xmlOutput.value.trim()) {
     parseBtn.click();
   }
 });
 xmlUnitMilesInput.addEventListener("change", () => {
-  if (inputMode === "text" && xmlOutput.value.trim()) {
+  if ((inputMode === "text" || inputMode === "build") && xmlOutput.value.trim()) {
     parseBtn.click();
   }
 });
 
+rowsOutput.addEventListener("click", (event) => {
+  if (inputMode !== "build") return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  if (target.id === "addBlockInRowsBtn") {
+    builderBlocks.push(newBuilderBlock("run", currentUserUnit()));
+    renderBuilderEditor();
+    return;
+  }
+
+  const action = target.dataset.action;
+  const blockId = target.dataset.builderId;
+  if (!action || !blockId) return;
+
+  if (action === "remove") {
+    builderBlocks = removeBlockById(builderBlocks, blockId).blocks;
+    renderBuilderEditor();
+    return;
+  }
+
+  if (action === "add-child") {
+    builderBlocks = updateBlockById(builderBlocks, blockId, (block) => {
+      if (block.type !== "repeat") return block;
+      return { ...block, children: [...(block.children || []), newBuilderBlock("run", currentUserUnit())] };
+    });
+    renderBuilderEditor();
+  }
+});
+
+function onBuilderFieldEdit(event) {
+  if (inputMode !== "build") return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const blockId = target.dataset.builderId;
+  const field = target.dataset.field;
+  if (!blockId || !field) return;
+  const deferRenderWhileTyping = event.type === "input" && (field === "value" || field === "pace");
+
+  builderBlocks = updateBlockById(builderBlocks, blockId, (block) => {
+    const value = target.value;
+
+    if (field === "type") {
+      const nextType = value;
+      if (nextType === "repeat") {
+        return {
+          id: block.id,
+          type: "repeat",
+          repeats: 2,
+          children: block.type === "repeat" ? (block.children || []) : []
+        };
+      }
+      return {
+        id: block.id,
+        type: nextType,
+        targetType: nextType === "rest" ? "time" : (block.targetType || "distance"),
+        value: nextType === "rest"
+          ? (parseDurationInputToSeconds(block.value) ? block.value : "00:01:00")
+          : (() => {
+            const parsed = parseBuilderDistanceValue(block.value, currentUserUnit());
+            if (!parsed) return formatBuilderDistanceValue(1, currentUserUnit());
+            const distanceInCurrentUnit = normalizePaceUnit(currentUserUnit()) === "mi"
+              ? parsed.distanceKm / KM_PER_MILE
+              : parsed.distanceKm;
+            return formatBuilderDistanceValue(distanceInCurrentUnit, currentUserUnit());
+          })(),
+        pace: nextType === "rest" ? "" : (block.pace || "6:00")
+      };
+    }
+
+    if (block.type === "repeat" && field === "repeats") {
+      return { ...block, repeats: Math.max(1, Number(value) || 1) };
+    }
+    if (field === "targetType") {
+      if (value === "time") {
+        return {
+          ...block,
+          targetType: "time",
+          value: parseDurationInputToSeconds(block.value) ? block.value : "00:01:00"
+        };
+      }
+      const parsed = parseBuilderDistanceValue(block.value, currentUserUnit());
+      return {
+        ...block,
+        targetType: "distance",
+        value: parsed
+          ? formatBuilderDistanceValue(
+            normalizePaceUnit(currentUserUnit()) === "mi"
+              ? parsed.distanceKm / KM_PER_MILE
+              : parsed.distanceKm,
+            currentUserUnit()
+          )
+          : formatBuilderDistanceValue(1, currentUserUnit())
+      };
+    }
+    if (field === "value") {
+      if (block.targetType === "distance") {
+        if (event.type !== "change") return { ...block, value };
+        const parsed = parseBuilderDistanceValue(value, currentUserUnit());
+        if (!parsed) return { ...block, value };
+        const distanceInCurrentUnit = normalizePaceUnit(currentUserUnit()) === "mi"
+          ? parsed.distanceKm / KM_PER_MILE
+          : parsed.distanceKm;
+        return { ...block, value: formatBuilderDistanceValue(distanceInCurrentUnit, currentUserUnit()) };
+      }
+      if (block.targetType === "time" && event.type === "change") {
+        return { ...block, value: parseDurationInputToSeconds(value) ? value : "00:01:00" };
+      }
+      return { ...block, value };
+    }
+    if (field === "pace") {
+      if (event.type !== "change") return block;
+      const normalizedPace = normalizePaceInput(value, currentUserUnit());
+      if (!normalizedPace) {
+        setStatus("Pace must be in mm:ss format with seconds between 00 and 59.", true);
+        return { ...block, pace: normalizePaceInput(block.pace, currentUserUnit()) || "6:00" };
+      }
+      return { ...block, pace: normalizedPace };
+    }
+    return block;
+  });
+
+  if (!deferRenderWhileTyping) {
+    renderBuilderEditor();
+  }
+}
+
+rowsOutput.addEventListener("input", onBuilderFieldEdit);
+rowsOutput.addEventListener("change", onBuilderFieldEdit);
+
 parseBtn.addEventListener("click", () => {
-  const text = inputMode === "text" ? workoutInput.value.trim() : buildInput.value.trim();
+  const text = workoutInput.value.trim();
   const userUnit = currentUserUnit();
   const walkingSpeedKmh = parsePaceToKmh(walkingTargetInput.value.trim(), userUnit);
   const conversationalSpeedKmh = parsePaceToKmh(conversationalTargetInput.value.trim(), userUnit);
@@ -447,18 +1045,8 @@ parseBtn.addEventListener("click", () => {
     return;
   }
 
-  if (inputMode === "build") {
-    setStatus("Build your own mode is not implemented yet.", true);
-    return;
-  }
-
-  if (!text) {
-    setStatus("Paste a workout text first.", true);
-    return;
-  }
-
   if (!Number.isFinite(walkingSpeedKmh) || !Number.isFinite(conversationalSpeedKmh)) {
-    setStatus("Provide valid walking and conversational paces in mm:ss format.", true);
+    setStatus("Provide valid walking and conversational paces in mm:ss format (seconds 00-59).", true);
     return;
   }
 
@@ -467,19 +1055,45 @@ parseBtn.addEventListener("click", () => {
     return;
   }
 
-  const rows = parseWorkout(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
-  const displayItems = buildDisplayItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+  let rows = [];
+  let displayItems = [];
+
+  if (inputMode === "build") {
+    const invalidPaceBlock = findFirstInvalidBuilderPace(builderBlocks, userUnit);
+    if (invalidPaceBlock) {
+      renderBuilderEditor();
+      setStatus(`Invalid pace in ${getBlockTypeLabel(invalidPaceBlock.type)} block. Use mm:ss with seconds 00-59.`, true);
+      return;
+    }
+    rows = buildRowsFromBuilder(userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+  } else {
+    if (!text) {
+      setStatus("Paste a workout text first.", true);
+      return;
+    }
+    rows = parseWorkout(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+    displayItems = buildDisplayItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+  }
+
   const xmlUnit = currentXmlUnit();
   if (!rows.length) {
-    renderRows([], userUnit);
+    if (inputMode === "build") {
+      renderBuilderEditor();
+    } else {
+      renderRows([], userUnit);
+    }
     xmlOutput.value = "";
     downloadBtn.disabled = true;
-    setStatus("No recognizable workout steps were found.", true);
+    setStatus(inputMode === "build" ? "No valid builder blocks found. Fill block values." : "No recognizable workout steps were found.", true);
     return;
   }
 
   const xml = generateXml(rows, xmlUnit);
-  renderRows(displayItems, userUnit);
+  if (inputMode === "build") {
+    renderBuilderEditor();
+  } else {
+    renderRows(displayItems, userUnit);
+  }
   xmlOutput.value = xml;
   downloadBtn.disabled = false;
   setStatus(`Generated ${rows.length} rows (${xmlUnit === "mi" ? "mi/mph" : "km/kmh"} XML).`);

@@ -42,9 +42,9 @@
         </div>
 
         <div id="buildInputSection" class="mode-section">
-          <label class="form-label" for="buildInput">Build your own workout</label>
-          <textarea class="form-control" id="buildInput" rows="8" placeholder="Builder mode coming soon..."></textarea>
-          <p class="mode-note mt-2">Structured workout builder is not implemented yet.</p>
+          <label class="form-label">Build your own workout</label>
+          <p class="mode-note mb-2">Add blocks and drag them in Parsed rows. Drop blocks inside Repeat blocks to nest them.</p>
+          <button class="btn btn-primary" id="addBlockBtn" type="button">Add block</button>
         </div>
 
         <div class="options-header mt-4">
@@ -71,14 +71,17 @@
           <div class="col-md-6 field">
             <label class="form-label" for="defaultIncline">Default incline % (optional)</label>
             <input class="form-control" id="defaultIncline" type="number" min="0" max="20" step="0.1" placeholder="e.g. 1.0">
-            <div class="d-grid d-md-inline-flex mt-3">
-              <button class="btn btn-primary" id="parseBtn" type="button">Generate workout</button>
-            </div>
           </div>
 
           <div class="col-md-6 field">
             <label class="form-label" for="conversationalTarget" id="conversationalTargetLabel">Conversational pace (mm:ss/km)</label>
             <input class="form-control" id="conversationalTarget" type="text" value="8:06">
+          </div>
+
+          <div class="col-12 field">
+            <div class="d-grid d-md-inline-flex">
+              <button class="btn btn-primary" id="parseBtn" type="button">Generate workout</button>
+            </div>
           </div>
         </div>
 
@@ -115,6 +118,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
