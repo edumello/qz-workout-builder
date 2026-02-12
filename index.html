@@ -12,8 +12,28 @@
     <p class="subtitle">Paste workout text from your calendar and generate treadmill XML.</p>
 
     <section class="panel">
-      <label for="workoutInput">Runna workout text</label>
-      <textarea id="workoutInput" rows="12" placeholder="Paste workout text here..."></textarea>
+      <div class="input-modes" role="tablist" aria-label="Workout input mode">
+        <button id="modeTextBtn" class="mode-btn active" type="button" role="tab" aria-selected="true" data-mode="text">Runna Workout Text</button>
+        <button id="modeImageBtn" class="mode-btn" type="button" role="tab" aria-selected="false" data-mode="image">Runna Workout Image</button>
+        <button id="modeBuildBtn" class="mode-btn" type="button" role="tab" aria-selected="false" data-mode="build">Build your own</button>
+      </div>
+
+      <div id="textInputSection" class="mode-section active">
+        <label for="workoutInput">Runna workout text</label>
+        <textarea id="workoutInput" rows="12" placeholder="Paste workout text here..."></textarea>
+      </div>
+
+      <div id="imageInputSection" class="mode-section">
+        <label for="workoutImageInput">Runna workout image</label>
+        <input id="workoutImageInput" type="file" accept="image/*">
+        <p class="mode-note">OCR parser is not implemented yet. This is the next step.</p>
+      </div>
+
+      <div id="buildInputSection" class="mode-section">
+        <label for="buildInput">Build your own workout</label>
+        <textarea id="buildInput" rows="8" placeholder="Builder mode coming soon..."></textarea>
+        <p class="mode-note">Structured workout builder is not implemented yet.</p>
+      </div>
 
       <div class="options">
         <div class="field">

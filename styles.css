@@ -42,6 +42,39 @@ h1 {
   margin-bottom: 14px;
 }
 
+.input-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mode-btn {
+  background: #e6eef3;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.mode-section {
+  display: none;
+}
+
+.mode-section.active {
+  display: block;
+}
+
+.mode-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 label {
   display: block;
   font-size: 14px;
@@ -149,6 +182,51 @@ button:disabled {
 }
 
 .rows-output {
+  display: grid;
+  gap: 8px;
+}
+
+.repeat-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fbfd;
+}
+
+.repeat-header {
+  background: linear-gradient(90deg, #ff9f1c, #ff5d5d);
+  color: #1f2933;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
+.repeat-header-repeat {
+  background: linear-gradient(90deg, #ff9f1c, #ff5d5d);
+  color: #1f2933;
+}
+
+.repeat-header-warm-up {
+  background: linear-gradient(90deg, #ffd166, #f4a261);
+  color: #1f2933;
+}
+
+.repeat-header-rest {
+  background: linear-gradient(90deg, #a8dadc, #76c7c0);
+  color: #16323a;
+}
+
+.repeat-header-run {
+  background: linear-gradient(90deg, #80ed99, #38b000);
+  color: #102a14;
+}
+
+.repeat-header-cool-down {
+  background: linear-gradient(90deg, #90e0ef, #4ea8de);
+  color: #0d2b45;
+}
+
+.repeat-body {
+  padding: 8px;
   display: grid;
   gap: 8px;
 }
