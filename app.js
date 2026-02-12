@@ -62,6 +62,13 @@ function formatKmh(value) {
   return Number(value).toFixed(1);
 }
 
+function formatSpeedForUnit(kmh, unitText) {
+  if (normalizePaceUnit(unitText) === "mi") {
+    return `${(kmh / KM_PER_MILE).toFixed(1)} mph`;
+  }
+  return `${formatKmh(kmh)} km/h`;
+}
+
 function formatIncline(value) {
   return Number(value).toFixed(1);
 }
@@ -84,7 +91,7 @@ function normalizeText(raw) {
 
 function expandRepeatFollowing(text) {
   let output = text;
-  const repeatRegex = /Repeat the following\s+(\d+)x:\s*-+\s*([\s\S]*?)\s*-+/i;
+  const repeatRegex = /Repeat the following\s+(\d+)x:\s*-{5,}\s*([\s\S]*?)\s*-{5,}/i;
 
   while (repeatRegex.test(output)) {
     output = output.replace(repeatRegex, (_, countStr, block) => {
@@ -222,7 +229,7 @@ function parseBlockItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaultI
 function buildDisplayItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline) {
   const normalized = normalizeText(text);
   const items = [];
-  const repeatRegex = /Repeat the following\s+(\d+)x:\s*-+\s*([\s\S]*?)\s*-+/gi;
+  const repeatRegex = /Repeat the following\s+(\d+)x:\s*-{5,}\s*([\s\S]*?)\s*-{5,}/gi;
   let cursor = 0;
   let match;
 
@@ -237,10 +244,12 @@ function buildDisplayItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaul
 
     const repeatCount = Number(match[1]);
     const blockText = match[2] || "";
+    const templateItems = parseBlockItems(blockText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+
     items.push({
       kind: "group",
       label: `Repeat x${repeatCount}`,
-      items: parseBlockItems(blockText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline)
+      items: templateItems
     });
     cursor = match.index + match[0].length;
   }
@@ -290,7 +299,6 @@ function renderRows(items, userUnit) {
   }
 
   const paceSuffix = userUnit === "mi" ? "/mi" : "/km";
-  let step = 1;
 
   function rowSectionLabel(type) {
     if (type === "warmup") return "Warm-Up";
@@ -322,12 +330,13 @@ function renderRows(items, userUnit) {
   }
 
   function renderRowItem(row) {
-    const target = row.distance !== undefined ? `${row.distance} km` : row.duration;
+    const targetLabel = row.distance !== undefined ? "Distance" : "Time";
+    const target = row.distance !== undefined
+      ? `${normalizePaceUnit(userUnit) === "mi" ? (row.distance / KM_PER_MILE).toFixed(2) : row.distance} ${normalizePaceUnit(userUnit) === "mi" ? "mi" : "km"}`
+      : row.duration;
     const incline = Number.isFinite(row.incline) ? ` | incline ${formatIncline(row.incline)}%` : "";
-    const speedAndPace = `${formatKmh(row.speedKmh)} km/h | ${kmhToPace(row.speedKmh, userUnit)}${paceSuffix}`;
-    const html = `<div class="row-item"><span>#${step}</span><span>${row.type}</span><span>${target}${incline}</span><span>${speedAndPace}</span><div class="row-source">${row.source}</div></div>`;
-    step += 1;
-    return html;
+    const speedAndPace = `${kmhToPace(row.speedKmh, userUnit)}${paceSuffix} | ${formatSpeedForUnit(row.speedKmh, userUnit)}`;
+    return `<div class="row-item"><span><strong>${targetLabel}:</strong> ${target}${incline}</span><span><strong>Pace:</strong> ${speedAndPace}</span><div class="row-source">${row.source}</div></div>`;
   }
 
   function renderItems(entryItems, depth = 0) {
@@ -335,13 +344,15 @@ function renderRows(items, userUnit) {
 
     return groupedItems.map((item) => {
       if (item.kind === "group") {
-        return `<div class="repeat-block depth-${depth}"><div class="repeat-header repeat-header-repeat">${item.label}</div><div class="repeat-body">${renderItems(item.items || [], depth + 1)}</div></div>`;
+        return `<div class="repeat-block repeat-block-repeat depth-${depth}"><div class="repeat-header repeat-header-repeat">${item.label}</div><div class="repeat-body">${renderItems(item.items || [], depth + 1)}</div></div>`;
       }
 
       if (item.kind === "section") {
-        const sectionClass = `repeat-header-${item.label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
+        const sectionKey = item.label.toLowerCase().replace(/[^a-z]+/g, "-");
+        const sectionClass = `repeat-header-${sectionKey}`;
+        const sectionBlockClass = `repeat-block-${sectionKey}`;
         const sectionRows = (item.items || []).map((entry) => renderRowItem(entry.row)).join("");
-        return `<div class="repeat-block depth-${depth}"><div class="repeat-header ${sectionClass}">${item.label}</div><div class="repeat-body">${sectionRows}</div></div>`;
+        return `<div class="repeat-block ${sectionBlockClass} depth-${depth}"><div class="repeat-header ${sectionClass}">${item.label}</div><div class="repeat-body">${sectionRows}</div></div>`;
       }
 
       return renderRowItem(item.row);

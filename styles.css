@@ -193,6 +193,26 @@ button:disabled {
   background: #f8fbfd;
 }
 
+.repeat-block-repeat {
+  border-color: #ff7b5a;
+}
+
+.repeat-block-warm-up {
+  border-color: #f4a261;
+}
+
+.repeat-block-rest {
+  border-color: #76c7c0;
+}
+
+.repeat-block-run {
+  border-color: #38b000;
+}
+
+.repeat-block-cool-down {
+  border-color: #4ea8de;
+}
+
 .repeat-header {
   background: linear-gradient(90deg, #ff9f1c, #ff5d5d);
   color: #1f2933;
@@ -233,7 +253,7 @@ button:disabled {
 
 .row-item {
   display: grid;
-  grid-template-columns: 48px 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -262,6 +282,6 @@ button:disabled {
   }
 
   .row-item {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 }
