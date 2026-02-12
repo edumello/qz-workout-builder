@@ -18,6 +18,8 @@ const downloadBtn = document.getElementById("downloadBtn");
 const rowsOutput = document.getElementById("rowsOutput");
 const xmlOutput = document.getElementById("xmlOutput");
 const statusOutput = document.getElementById("status");
+const xmlUnitKmInput = document.getElementById("xmlUnitKm");
+const xmlUnitMilesInput = document.getElementById("xmlUnitMiles");
 
 const KM_PER_MILE = 1.60934;
 let inputMode = "text";
@@ -30,6 +32,10 @@ function normalizePaceUnit(unitText) {
 
 function currentUserUnit() {
   return unitMilesInput.checked ? "mi" : "km";
+}
+
+function currentXmlUnit() {
+  return xmlUnitMilesInput.checked ? "mi" : "km";
 }
 
 function parsePaceToKmh(paceText, unitText) {
@@ -265,13 +271,17 @@ function buildDisplayItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaul
   return items;
 }
 
-function generateXml(rows) {
+function generateXml(rows, xmlUnit) {
   const lines = ['<?xml version="1.0" encoding="UTF-8"?>', "<rows>"];
+  const useMiles = normalizePaceUnit(xmlUnit) === "mi";
   for (const row of rows) {
-    const speed = formatKmh(row.speedKmh);
+    const speedValue = useMiles ? row.speedKmh / KM_PER_MILE : row.speedKmh;
+    const speed = formatKmh(speedValue);
     if (row.distance !== undefined) {
+      const distanceValue = useMiles ? row.distance / KM_PER_MILE : row.distance;
+      const distance = useMiles ? Number(distanceValue.toFixed(3)) : row.distance;
       const incline = Number.isFinite(row.incline) ? ` inclination="${formatIncline(row.incline)}"` : "";
-      lines.push(`    <row distance="${row.distance}" speed="${speed}" forcespeed="1"${incline}/>`);
+      lines.push(`    <row distance="${distance}" speed="${speed}" forcespeed="1"${incline}/>`);
     } else {
       lines.push(`    <row duration="${row.duration}" speed="${speed}" forcespeed="1"/>`);
     }
@@ -413,6 +423,16 @@ unitMilesInput.addEventListener("change", onUnitChange);
 modeTextBtn.addEventListener("click", () => setInputMode("text"));
 modeImageBtn.addEventListener("click", () => setInputMode("image"));
 modeBuildBtn.addEventListener("click", () => setInputMode("build"));
+xmlUnitKmInput.addEventListener("change", () => {
+  if (inputMode === "text" && xmlOutput.value.trim()) {
+    parseBtn.click();
+  }
+});
+xmlUnitMilesInput.addEventListener("change", () => {
+  if (inputMode === "text" && xmlOutput.value.trim()) {
+    parseBtn.click();
+  }
+});
 
 parseBtn.addEventListener("click", () => {
   const text = inputMode === "text" ? workoutInput.value.trim() : buildInput.value.trim();
@@ -449,6 +469,7 @@ parseBtn.addEventListener("click", () => {
 
   const rows = parseWorkout(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
   const displayItems = buildDisplayItems(text, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+  const xmlUnit = currentXmlUnit();
   if (!rows.length) {
     renderRows([], userUnit);
     xmlOutput.value = "";
@@ -457,11 +478,11 @@ parseBtn.addEventListener("click", () => {
     return;
   }
 
-  const xml = generateXml(rows);
+  const xml = generateXml(rows, xmlUnit);
   renderRows(displayItems, userUnit);
   xmlOutput.value = xml;
   downloadBtn.disabled = false;
-  setStatus(`Generated ${rows.length} rows.`);
+  setStatus(`Generated ${rows.length} rows (${xmlUnit === "mi" ? "mi/mph" : "km/kmh"} XML).`);
 });
 
 downloadBtn.addEventListener("click", () => {

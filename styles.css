@@ -1,10 +1,9 @@
 :root {
   --bg: #f2f5f7;
-  --panel: #ffffff;
   --text: #1f2933;
   --muted: #52606d;
   --accent: #0b7285;
-  --accent-dark: #095c6b;
+  --accent-2: #177e9a;
   --error: #b42318;
   --border: #d9e2ec;
 }
@@ -14,51 +13,67 @@
 }
 
 body {
-  margin: 0;
-  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
   background: radial-gradient(circle at top right, #dff7fb, var(--bg) 42%);
   color: var(--text);
 }
 
 .app {
-  width: min(980px, 94vw);
-  margin: 28px auto 40px;
+  max-width: 1060px;
 }
 
-h1 {
-  margin: 0 0 6px;
+.card {
+  border-color: #cfdce8;
+  border-radius: 14px;
+}
+
+.card.shadow-sm {
+  box-shadow: 0 3px 10px rgba(16, 24, 40, 0.04) !important;
+}
+
+.top-card {
+  overflow: hidden;
 }
 
 .subtitle {
-  margin: 0 0 18px;
   color: var(--muted);
 }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 14px;
+.input-modes {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  gap: 6px;
 }
 
-.input-modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
+.custom-tabs .nav-item {
+  margin-bottom: 0;
 }
 
 .mode-btn {
-  background: #e6eef3;
-  color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid #cbd7e3 !important;
+  border-bottom: 0 !important;
+  border-radius: 10px 10px 0 0 !important;
+  background: #edf2f7 !important;
+  color: #334155;
+  font-weight: 600;
+  padding: 11px 14px;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .mode-btn.active {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
+  border-color: #b8c9da !important;
+  background: #fff !important;
+  color: var(--accent-2) !important;
+  font-weight: 700;
+}
+
+.mode-btn:hover {
+  background: #e6edf5 !important;
+  color: #1f3347;
+}
+
+.mode-btn.active:hover {
+  background: #fff !important;
+  color: var(--accent-2) !important;
 }
 
 .mode-section {
@@ -70,51 +85,91 @@ h1 {
 }
 
 .mode-note {
-  margin: 8px 0 0;
   color: var(--muted);
   font-size: 13px;
 }
 
-label {
-  display: block;
-  font-size: 14px;
-  margin-bottom: 8px;
+.options-header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
 }
 
-textarea,
-input,
-select {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 14px;
+.options-title {
+  color: #1f3347;
+  font-weight: 700;
 }
 
-textarea {
-  resize: vertical;
-}
-
-.options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 12px;
-  margin-top: 12px;
-}
-
-.field {
+.options .field {
   min-width: 0;
+}
+
+.form-label {
+  font-weight: 600;
+  color: #263645;
+}
+
+.workout-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.label-main {
+  font-weight: 700;
+  color: #263645;
+}
+
+.label-hint {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.92rem;
+}
+
+.form-control {
+  border-color: #c6d4e1;
+}
+
+.form-control:focus {
+  border-color: #94c2d1;
+  box-shadow: 0 0 0 0.2rem rgba(11, 114, 133, 0.15);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  border-radius: 10px;
+  font-weight: 600;
+  padding-inline: 16px;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+
+.xml-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.xml-controls {
+  margin: 0;
+  width: min(260px, 100%);
 }
 
 .unit-segment {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  width: min(260px, 100%);
   border: 1px solid var(--border);
   border-radius: 999px;
   background: #edf2f7;
   overflow: hidden;
-  max-width: 260px;
   min-height: 40px;
 }
 
@@ -147,43 +202,26 @@ textarea {
   color: var(--text);
 }
 
-#unitMiles:checked ~ .unit-thumb {
+#unitMiles:checked ~ .unit-thumb,
+#xmlUnitMiles:checked ~ .unit-thumb {
   transform: translateX(100%);
 }
 
 #unitKm:checked ~ label[for="unitKm"],
-#unitMiles:checked ~ label[for="unitMiles"] {
+#unitMiles:checked ~ label[for="unitMiles"],
+#xmlUnitKm:checked ~ label[for="xmlUnitKm"],
+#xmlUnitMiles:checked ~ label[for="xmlUnitMiles"] {
   color: #fff;
-}
-
-.actions {
-  margin-top: 14px;
-  display: flex;
-  gap: 10px;
-}
-
-button {
-  border: 0;
-  background: var(--accent);
-  color: #fff;
-  padding: 10px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-button:hover {
-  background: var(--accent-dark);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .rows-output {
   display: grid;
   gap: 8px;
+}
+
+.section-title {
+  margin: 0;
+  font-weight: 700;
 }
 
 .repeat-block {
@@ -214,7 +252,6 @@ button:disabled {
 }
 
 .repeat-header {
-  background: linear-gradient(90deg, #ff9f1c, #ff5d5d);
   color: #1f2933;
   font-weight: 700;
   padding: 8px 10px;
@@ -222,12 +259,10 @@ button:disabled {
 
 .repeat-header-repeat {
   background: linear-gradient(90deg, #ff9f1c, #ff5d5d);
-  color: #1f2933;
 }
 
 .repeat-header-warm-up {
   background: linear-gradient(90deg, #ffd166, #f4a261);
-  color: #1f2933;
 }
 
 .repeat-header-rest {
@@ -259,6 +294,7 @@ button:disabled {
   border-radius: 8px;
   padding: 9px 10px;
   font-size: 14px;
+  background: #fff;
 }
 
 .row-source {
@@ -276,9 +312,13 @@ button:disabled {
   color: var(--error);
 }
 
+.xml-output {
+  font-family: Consolas, "Courier New", monospace;
+}
+
 @media (max-width: 680px) {
-  .options {
-    grid-template-columns: 1fr;
+  .xml-toolbar {
+    width: 100%;
   }
 
   .row-item {

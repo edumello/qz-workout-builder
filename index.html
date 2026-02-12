@@ -4,83 +4,117 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>QZ Workout Builder</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <main class="app">
-    <h1>Runna to QZ XML</h1>
-    <p class="subtitle">Paste workout text from your calendar and generate treadmill XML.</p>
+  <main class="container py-4 py-md-5 app">
+    <h1 class="mb-1 fw-bold">Runna to QZ XML</h1>
+    <p class="subtitle mb-4">Paste workout text from your calendar and generate treadmill XML.</p>
 
-    <section class="panel">
-      <div class="input-modes" role="tablist" aria-label="Workout input mode">
-        <button id="modeTextBtn" class="mode-btn active" type="button" role="tab" aria-selected="true" data-mode="text">Runna Workout Text</button>
-        <button id="modeImageBtn" class="mode-btn" type="button" role="tab" aria-selected="false" data-mode="image">Runna Workout Image</button>
-        <button id="modeBuildBtn" class="mode-btn" type="button" role="tab" aria-selected="false" data-mode="build">Build your own</button>
+    <section class="card shadow-sm mb-3 top-card">
+      <div class="card-header bg-transparent border-0 px-3 pt-3 pb-0">
+        <ul class="nav nav-tabs input-modes custom-tabs" role="tablist" aria-label="Workout input mode">
+          <li class="nav-item" role="presentation">
+            <button id="modeTextBtn" class="nav-link mode-btn active" type="button" role="tab" aria-selected="true" data-mode="text">Runna Workout Text</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button id="modeImageBtn" class="nav-link mode-btn" type="button" role="tab" aria-selected="false" data-mode="image">Runna Workout Image</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button id="modeBuildBtn" class="nav-link mode-btn" type="button" role="tab" aria-selected="false" data-mode="build">Build your own</button>
+          </li>
+        </ul>
       </div>
+      <div class="card-body pt-3">
+        <div id="textInputSection" class="mode-section active">
+          <label class="form-label workout-label" for="workoutInput">
+            <span class="label-main">Runna workout text</span>
+            <span class="label-hint">(Paste workout text here)</span>
+          </label>
+          <textarea class="form-control" id="workoutInput" rows="12" placeholder="Paste workout text here..."></textarea>
+        </div>
 
-      <div id="textInputSection" class="mode-section active">
-        <label for="workoutInput">Runna workout text</label>
-        <textarea id="workoutInput" rows="12" placeholder="Paste workout text here..."></textarea>
-      </div>
+        <div id="imageInputSection" class="mode-section">
+          <label class="form-label" for="workoutImageInput">Runna workout image</label>
+          <input class="form-control" id="workoutImageInput" type="file" accept="image/*">
+          <p class="mode-note mt-2">OCR parser is not implemented yet. This is the next step.</p>
+        </div>
 
-      <div id="imageInputSection" class="mode-section">
-        <label for="workoutImageInput">Runna workout image</label>
-        <input id="workoutImageInput" type="file" accept="image/*">
-        <p class="mode-note">OCR parser is not implemented yet. This is the next step.</p>
-      </div>
+        <div id="buildInputSection" class="mode-section">
+          <label class="form-label" for="buildInput">Build your own workout</label>
+          <textarea class="form-control" id="buildInput" rows="8" placeholder="Builder mode coming soon..."></textarea>
+          <p class="mode-note mt-2">Structured workout builder is not implemented yet.</p>
+        </div>
 
-      <div id="buildInputSection" class="mode-section">
-        <label for="buildInput">Build your own workout</label>
-        <textarea id="buildInput" rows="8" placeholder="Builder mode coming soon..."></textarea>
-        <p class="mode-note">Structured workout builder is not implemented yet.</p>
-      </div>
+        <div class="options-header mt-4">
+          <h2 class="h5 options-title mb-0">Workout options</h2>
+        </div>
 
-      <div class="options">
-        <div class="field">
-          <label>Unit</label>
-          <div class="unit-segment" role="radiogroup" aria-label="Unit">
-            <input id="unitKm" name="unit" type="radio" value="km" checked>
-            <input id="unitMiles" name="unit" type="radio" value="mi">
-            <span class="unit-thumb" aria-hidden="true"></span>
-            <label for="unitKm">km</label>
-            <label for="unitMiles">miles</label>
+        <div class="row g-3 mt-1 options">
+          <div class="col-md-6 field">
+            <label class="form-label">Unit</label>
+            <div class="unit-segment" role="radiogroup" aria-label="Unit">
+              <input id="unitKm" name="unit" type="radio" value="km" checked>
+              <input id="unitMiles" name="unit" type="radio" value="mi">
+              <span class="unit-thumb" aria-hidden="true"></span>
+              <label for="unitKm">km</label>
+              <label for="unitMiles">miles</label>
+            </div>
+          </div>
+
+          <div class="col-md-6 field">
+            <label class="form-label" for="walkingTarget" id="walkingTargetLabel">Walking pace (mm:ss/km)</label>
+            <input class="form-control" id="walkingTarget" type="text" value="15:00">
+          </div>
+
+          <div class="col-md-6 field">
+            <label class="form-label" for="defaultIncline">Default incline % (optional)</label>
+            <input class="form-control" id="defaultIncline" type="number" min="0" max="20" step="0.1" placeholder="e.g. 1.0">
+            <div class="d-grid d-md-inline-flex mt-3">
+              <button class="btn btn-primary" id="parseBtn" type="button">Generate workout</button>
+            </div>
+          </div>
+
+          <div class="col-md-6 field">
+            <label class="form-label" for="conversationalTarget" id="conversationalTargetLabel">Conversational pace (mm:ss/km)</label>
+            <input class="form-control" id="conversationalTarget" type="text" value="8:06">
           </div>
         </div>
 
-        <div class="field">
-          <label for="walkingTarget" id="walkingTargetLabel">Walking pace (mm:ss/km)</label>
-          <input id="walkingTarget" type="text" value="15:00">
-        </div>
-
-        <div class="field">
-          <label for="conversationalTarget" id="conversationalTargetLabel">Conversational pace (mm:ss/km)</label>
-          <input id="conversationalTarget" type="text" value="8:06">
-        </div>
-
-        <div class="field">
-          <label for="defaultIncline">Default incline % (optional)</label>
-          <input id="defaultIncline" type="number" min="0" max="20" step="0.1" placeholder="e.g. 1.0">
-        </div>
-      </div>
-
-      <div class="actions">
-        <button id="parseBtn" type="button">Generate XML</button>
-        <button id="downloadBtn" type="button" disabled>Download XML</button>
       </div>
     </section>
 
-    <section class="panel">
-      <h2>Parsed rows</h2>
-      <div id="rowsOutput" class="rows-output"></div>
+    <section class="card shadow-sm mb-3">
+      <div class="card-body">
+      <h2 class="h3 section-title">Parsed rows</h2>
+      <div id="rowsOutput" class="rows-output mt-3"></div>
+      </div>
     </section>
 
-    <section class="panel">
-      <h2>XML output</h2>
-      <textarea id="xmlOutput" rows="14" readonly></textarea>
+    <section class="card shadow-sm mb-3">
+      <div class="card-body">
+      <h2 class="h3 section-title mb-0">XML output</h2>
+      <div class="xml-toolbar mt-3 mb-3">
+        <div class="xml-controls">
+          <label class="form-label">Unit</label>
+          <div class="unit-segment" role="radiogroup" aria-label="XML unit">
+            <input id="xmlUnitKm" name="xmlUnit" type="radio" value="km" checked>
+            <input id="xmlUnitMiles" name="xmlUnit" type="radio" value="mi">
+            <span class="unit-thumb" aria-hidden="true"></span>
+            <label for="xmlUnitKm">km</label>
+            <label for="xmlUnitMiles">miles</label>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="downloadBtn" type="button" disabled>Download XML</button>
+      </div>
+      <textarea class="form-control xml-output" id="xmlOutput" rows="14" readonly></textarea>
       <p id="status" class="status"></p>
+      </div>
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
   <script src="app.js"></script>
 </body>
 </html>
