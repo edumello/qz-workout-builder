@@ -264,6 +264,55 @@ test("detects OCR-mangled repeat labels", async ({ page }) => {
   expect(repeatGroup).toBeTruthy();
 });
 
+test("xml unit toggle in image mode uses cached rows and does not rerun OCR", async ({ page }) => {
+  await page.goto("/");
+
+  await page.evaluate(() => {
+    setInputMode("image");
+    window.__ocrCalled = 0;
+    const originalOcr = window.extractWorkoutTextFromImageFile;
+    window.extractWorkoutTextFromImageFile = async (...args) => {
+      window.__ocrCalled += 1;
+      return originalOcr(...args);
+    };
+
+    const sampleRows = [{ type: "run", distance: 1, speedKmh: 10 }];
+    setCachedRowsForMode("image", sampleRows);
+    document.getElementById("xmlOutput").value = generateXml(sampleRows, "km");
+  });
+
+  await page.locator('label[for="xmlUnitMiles"]').click();
+
+  const xml = await page.locator("#xmlOutput").inputValue();
+  expect(xml).toContain('distance="0.621"');
+  expect(xml).toContain('speed="6.2"');
+  const ocrCalled = await page.evaluate(() => window.__ocrCalled);
+  expect(ocrCalled).toBe(0);
+});
+
+test("image OCR unit auto-switches back to km when km is detected", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => setInputMode("image"));
+
+  await page.locator('label[for="unitMiles"]').click();
+  await page.fill("#walkingTarget", "24:08");
+  await page.fill("#conversationalTarget", "13:02");
+
+  const result = await page.evaluate(() => {
+    const detected = detectWorkoutUnitFromText("1km at 6:00/km");
+    if (detected) switchUserUnit(detected);
+    return {
+      unit: currentUserUnit(),
+      walking: document.getElementById("walkingTarget").value,
+      conversational: document.getElementById("conversationalTarget").value
+    };
+  });
+
+  expect(result.unit).toBe("km");
+  expect(result.walking).not.toBe("24:08");
+  expect(result.conversational).not.toBe("13:02");
+});
+
 test("does not invent repeat blocks when OCR misses repeat header text", async ({ page }) => {
   await page.goto("/");
 

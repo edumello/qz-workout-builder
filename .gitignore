@@ -17,6 +17,9 @@ build/
 playwright-report/
 test-results/
 
+# Local sample assets (OCR debugging)
+ss_examples/
+
 # Env files
 .env
 .env.*
@@ -24,3 +27,6 @@ test-results/
 # OS/editor noise
 .DS_Store
 Thumbs.db
+
+# Local temp files
+*.tmp

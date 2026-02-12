@@ -6,6 +6,8 @@ const textInputSection = document.getElementById("textInputSection");
 const imageInputSection = document.getElementById("imageInputSection");
 const buildInputSection = document.getElementById("buildInputSection");
 const workoutImageInput = document.getElementById("workoutImageInput");
+const imagePreviewWrap = document.getElementById("imagePreviewWrap");
+const imagePreview = document.getElementById("imagePreview");
 const ocrEngineSelect = document.getElementById("ocrEngineSelect");
 const ocrPreprocessInput = document.getElementById("ocrPreprocess");
 const ocrDebugWrap = document.getElementById("ocrDebugWrap");
@@ -34,6 +36,7 @@ const xmlUnitMilesInput = document.getElementById("xmlUnitMiles");
 const KM_PER_MILE = 1.60934;
 let scribeModulePromise = null;
 let scribeUnavailable = false;
+let currentImagePreviewUrl = null;
 let inputMode = "text";
 let builderIdCounter = 1;
 let builderBlocks = [];
@@ -41,6 +44,11 @@ let builderSortables = [];
 const lastParsedItemsByMode = {
   text: [],
   image: []
+};
+const lastGeneratedRowsByMode = {
+  text: [],
+  image: [],
+  build: []
 };
 const MODE_PLACEHOLDERS = {
   text: "<p>Text mode active. Click Generate workout to preview parsed rows.</p>",
@@ -196,6 +204,27 @@ function currentOcrEngine() {
 
 function shouldPreprocessOcr() {
   return Boolean(ocrPreprocessInput?.checked);
+}
+
+function detectWorkoutUnitFromText(text) {
+  const lower = String(text || "").toLowerCase();
+  if (!lower.trim()) return null;
+
+  const mileSignals = (lower.match(/(?:\/mi\b|\b\d+(?:[.,]\d+)?\s*mi\b|\bmph\b)/g) || []).length;
+  const kmSignals = (lower.match(/(?:\/km\b|\b\d+(?:[.,]\d+)?\s*km\b|\bkph\b|\bkm\/h\b)/g) || []).length;
+
+  if (mileSignals === 0 && kmSignals === 0) return null;
+  if (mileSignals > kmSignals) return "mi";
+  if (kmSignals > mileSignals) return "km";
+  return null;
+}
+
+function switchUserUnit(unit) {
+  const target = unit === "mi" ? unitMilesInput : unitKmInput;
+  if (!target || target.checked) return false;
+  target.checked = true;
+  target.dispatchEvent(new Event("change", { bubbles: true }));
+  return true;
 }
 
 function scoreOcrText(text) {
@@ -1448,6 +1477,34 @@ function cloneDisplayItems(items) {
   return JSON.parse(JSON.stringify(items || []));
 }
 
+function cloneRows(rows) {
+  return (rows || []).map((row) => ({ ...row }));
+}
+
+function modeToCacheKey(mode) {
+  if (mode === "image" || mode === "build" || mode === "text") return mode;
+  return "text";
+}
+
+function setCachedRowsForMode(mode, rows) {
+  const key = modeToCacheKey(mode);
+  lastGeneratedRowsByMode[key] = cloneRows(rows);
+}
+
+function getCachedRowsForMode(mode) {
+  const key = modeToCacheKey(mode);
+  return cloneRows(lastGeneratedRowsByMode[key] || []);
+}
+
+function regenerateXmlFromCachedRows(mode = inputMode) {
+  const rows = getCachedRowsForMode(mode);
+  if (!rows.length) return false;
+  const xmlUnit = currentXmlUnit();
+  xmlOutput.value = generateXml(rows, xmlUnit);
+  downloadBtn.disabled = false;
+  return true;
+}
+
 function rowTypeToBuilderType(rowType) {
   if (rowType === "warmup") return "warmup";
   if (rowType === "cooldown") return "cooldown";
@@ -1584,12 +1641,66 @@ function setStatus(message, isError = false) {
   statusOutput.className = isError ? "status error" : "status";
 }
 
+function setGenerateLoading(isLoading) {
+  const setButtonState = (button, loadingLabel) => {
+    if (!button) return;
+    if (!button.dataset.defaultLabel) {
+      button.dataset.defaultLabel = button.textContent.trim();
+    }
+    button.disabled = isLoading;
+    if (isLoading) {
+      button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${loadingLabel}`;
+    } else {
+      button.textContent = button.dataset.defaultLabel;
+    }
+  };
+
+  setButtonState(parseBtn, "Generating...");
+  setButtonState(parseXmlBtn, "Generating...");
+}
+
 function setOcrDebugText(text) {
-  if (!ocrDebugWrap || !ocrDebugOutput) return;
   const value = String(text || "").trim();
+  if (value) {
+    console.log("[OCR DEBUG]\n" + value);
+  }
+  if (!ocrDebugWrap || !ocrDebugOutput) return;
   ocrDebugOutput.value = value;
   ocrDebugWrap.hidden = !value;
   ocrDebugWrap.open = Boolean(value);
+}
+
+function clearImagePreview() {
+  if (currentImagePreviewUrl) {
+    URL.revokeObjectURL(currentImagePreviewUrl);
+    currentImagePreviewUrl = null;
+  }
+  if (imagePreview) {
+    imagePreview.removeAttribute("src");
+  }
+  if (imagePreviewWrap) {
+    imagePreviewWrap.hidden = true;
+  }
+}
+
+function setImagePreviewFromFile(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) {
+    clearImagePreview();
+    return;
+  }
+
+  if (currentImagePreviewUrl) {
+    URL.revokeObjectURL(currentImagePreviewUrl);
+    currentImagePreviewUrl = null;
+  }
+
+  currentImagePreviewUrl = URL.createObjectURL(file);
+  if (imagePreview) {
+    imagePreview.src = currentImagePreviewUrl;
+  }
+  if (imagePreviewWrap) {
+    imagePreviewWrap.hidden = false;
+  }
 }
 
 function updateEditParsedButton() {
@@ -1764,6 +1875,10 @@ modeTextBtn.addEventListener("click", () => setInputMode("text"));
 modeImageBtn.addEventListener("click", () => setInputMode("image"));
 modeBuildBtn.addEventListener("click", () => setInputMode("build"));
 parseXmlBtn.addEventListener("click", () => parseBtn.click());
+workoutImageInput?.addEventListener("change", () => {
+  const imageFile = workoutImageInput.files?.[0];
+  setImagePreviewFromFile(imageFile || null);
+});
 editParsedBtn.addEventListener("click", () => {
   const sourceMode = inputMode === "image" ? "image" : "text";
   const sourceItems = sourceMode === "image" ? lastParsedItemsByMode.image : lastParsedItemsByMode.text;
@@ -1786,16 +1901,20 @@ editParsedBtn.addEventListener("click", () => {
   modeSnapshots.build.statusError = false;
   setInputMode("build");
 });
-xmlUnitKmInput.addEventListener("change", () => {
-  if ((inputMode === "text" || inputMode === "build" || inputMode === "image") && xmlOutput.value.trim()) {
-    parseBtn.click();
+function onXmlUnitChange() {
+  if (!xmlOutput.value.trim()) return;
+  if (regenerateXmlFromCachedRows(inputMode)) return;
+
+  // Fallback for legacy state where XML exists but row cache was not yet populated.
+  if (inputMode === "image") {
+    setStatus("Generate workout once before changing XML unit.", true);
+    return;
   }
-});
-xmlUnitMilesInput.addEventListener("change", () => {
-  if ((inputMode === "text" || inputMode === "build" || inputMode === "image") && xmlOutput.value.trim()) {
-    parseBtn.click();
-  }
-});
+  parseBtn.click();
+}
+
+xmlUnitKmInput.addEventListener("change", onXmlUnitChange);
+xmlUnitMilesInput.addEventListener("change", onXmlUnitChange);
 
 rowsOutput.addEventListener("click", (event) => {
   if (inputMode !== "build") return;
@@ -1956,132 +2075,150 @@ rowsOutput.addEventListener("input", onBuilderFieldEdit);
 rowsOutput.addEventListener("change", onBuilderFieldEdit);
 
 parseBtn.addEventListener("click", async () => {
-  const text = workoutInput.value.trim();
-  const userUnit = currentUserUnit();
-  const workoutTargetMode = getWorkoutTargetModeForMode(inputMode);
-  const walkingSpeedKmh = parseWorkoutTargetToKmh(walkingTargetInput.value.trim(), userUnit, workoutTargetMode);
-  const conversationalSpeedKmh = parseWorkoutTargetToKmh(conversationalTargetInput.value.trim(), userUnit, workoutTargetMode);
-  const defaultInclineRaw = defaultInclineInput.value.trim();
-  const defaultIncline = defaultInclineRaw === "" ? null : Number(defaultInclineRaw);
+  setGenerateLoading(true);
+  try {
+    const text = workoutInput.value.trim();
+    let userUnit = currentUserUnit();
+    const workoutTargetMode = getWorkoutTargetModeForMode(inputMode);
+    const defaultInclineRaw = defaultInclineInput.value.trim();
+    const defaultIncline = defaultInclineRaw === "" ? null : Number(defaultInclineRaw);
 
-  if (!Number.isFinite(walkingSpeedKmh) || !Number.isFinite(conversationalSpeedKmh)) {
-    setStatus(
-      workoutTargetMode === "speed"
-        ? "Provide valid walking and conversational speeds as positive numbers."
-        : "Provide valid walking and conversational paces in mm:ss format (seconds 00-59).",
-      true
-    );
-    return;
-  }
+    if (defaultInclineRaw !== "" && !Number.isFinite(defaultIncline)) {
+      setStatus("Default incline must be a number when provided.", true);
+      return;
+    }
 
-  if (defaultInclineRaw !== "" && !Number.isFinite(defaultIncline)) {
-    setStatus("Default incline must be a number when provided.", true);
-    return;
-  }
+    let rows = [];
+    let displayItems = [];
+    let parsedSourceText = text;
+    let autoSwitchedUnit = null;
+    if (inputMode !== "image") {
+      setOcrDebugText("");
+    }
 
-  let rows = [];
-  let displayItems = [];
-  let parsedSourceText = text;
-  if (inputMode !== "image") {
-    setOcrDebugText("");
-  }
+    if (inputMode === "image") {
+      const imageFile = workoutImageInput?.files?.[0];
+      if (!imageFile) {
+        setOcrDebugText("");
+        setStatus("Upload a workout screenshot first.", true);
+        return;
+      }
+      try {
+        const ocrResult = await extractWorkoutTextFromImageFile(imageFile, {
+          engine: currentOcrEngine(),
+          preprocess: shouldPreprocessOcr()
+        });
+        parsedSourceText = ocrResult.text || "";
+        setOcrDebugText(ocrResult.debug || parsedSourceText);
+      } catch (error) {
+        setOcrDebugText("");
+        setStatus(error instanceof Error ? error.message : "Failed to read workout image.", true);
+        return;
+      }
+      if (!parsedSourceText) {
+        setOcrDebugText("");
+        setStatus("Could not extract text from the image.", true);
+        return;
+      }
+      const detectedUnit = detectWorkoutUnitFromText(parsedSourceText);
+      if ((detectedUnit === "mi" || detectedUnit === "km") && switchUserUnit(detectedUnit)) {
+        userUnit = currentUserUnit();
+        autoSwitchedUnit = detectedUnit;
+      }
+    }
 
-  if (inputMode === "build") {
-    const builderInputMode = currentBuilderInputMode();
-    const invalidInputBlock = findFirstInvalidBuilderInput(builderBlocks, userUnit, builderInputMode);
-    if (invalidInputBlock) {
-      renderBuilderEditor();
+    const walkingSpeedKmh = parseWorkoutTargetToKmh(walkingTargetInput.value.trim(), userUnit, workoutTargetMode);
+    const conversationalSpeedKmh = parseWorkoutTargetToKmh(conversationalTargetInput.value.trim(), userUnit, workoutTargetMode);
+
+    if (!Number.isFinite(walkingSpeedKmh) || !Number.isFinite(conversationalSpeedKmh)) {
       setStatus(
-        builderInputMode === "speed"
-          ? `Invalid speed in ${getBlockTypeLabel(invalidInputBlock.type)} block. Use a positive number.`
-          : `Invalid pace in ${getBlockTypeLabel(invalidInputBlock.type)} block. Use mm:ss with seconds 00-59.`,
+        workoutTargetMode === "speed"
+          ? "Provide valid walking and conversational speeds as positive numbers."
+          : "Provide valid walking and conversational paces in mm:ss format (seconds 00-59).",
         true
       );
       return;
     }
-    rows = buildRowsFromBuilder(userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline, builderInputMode);
-  } else if (inputMode === "image") {
-    const imageFile = workoutImageInput?.files?.[0];
-    if (!imageFile) {
-      setOcrDebugText("");
-      setStatus("Upload a workout screenshot first.", true);
-      return;
-    }
-    try {
-      const ocrResult = await extractWorkoutTextFromImageFile(imageFile, {
-        engine: currentOcrEngine(),
-        preprocess: shouldPreprocessOcr()
-      });
-      parsedSourceText = ocrResult.text || "";
-      setOcrDebugText(ocrResult.debug || parsedSourceText);
-    } catch (error) {
-      setOcrDebugText("");
-      setStatus(error instanceof Error ? error.message : "Failed to read workout image.", true);
-      return;
-    }
-    if (!parsedSourceText) {
-      setOcrDebugText("");
-      setStatus("Could not extract text from the image.", true);
-      return;
-    }
-    const parsedFromImage = parseRunnaImageWorkout(
-      parsedSourceText,
-      userUnit,
-      walkingSpeedKmh,
-      conversationalSpeedKmh,
-      defaultIncline
-    );
-    rows = parsedFromImage.rows || [];
-    displayItems = parsedFromImage.items || [];
 
-    // Fallback to text parser when image-structured parsing cannot identify steps.
-    if (!rows.length) {
+    if (inputMode === "build") {
+      const builderInputMode = currentBuilderInputMode();
+      const invalidInputBlock = findFirstInvalidBuilderInput(builderBlocks, userUnit, builderInputMode);
+      if (invalidInputBlock) {
+        renderBuilderEditor();
+        setStatus(
+          builderInputMode === "speed"
+            ? `Invalid speed in ${getBlockTypeLabel(invalidInputBlock.type)} block. Use a positive number.`
+            : `Invalid pace in ${getBlockTypeLabel(invalidInputBlock.type)} block. Use mm:ss with seconds 00-59.`,
+          true
+        );
+        return;
+      }
+      rows = buildRowsFromBuilder(userUnit, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline, builderInputMode);
+    } else if (inputMode === "image") {
+      const parsedFromImage = parseRunnaImageWorkout(
+        parsedSourceText,
+        userUnit,
+        walkingSpeedKmh,
+        conversationalSpeedKmh,
+        defaultIncline
+      );
+      rows = parsedFromImage.rows || [];
+      displayItems = parsedFromImage.items || [];
+
+      // Fallback to text parser when image-structured parsing cannot identify steps.
+      if (!rows.length) {
+        rows = parseWorkout(parsedSourceText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+        displayItems = buildDisplayItems(parsedSourceText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
+      }
+    } else {
+      if (!parsedSourceText) {
+        setStatus("Paste a workout text first.", true);
+        return;
+      }
       rows = parseWorkout(parsedSourceText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
       displayItems = buildDisplayItems(parsedSourceText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
     }
-  } else {
-    if (!parsedSourceText) {
-      setStatus("Paste a workout text first.", true);
+
+    const xmlUnit = currentXmlUnit();
+    if (!rows.length) {
+      setCachedRowsForMode(inputMode, []);
+      if (inputMode === "build") {
+        renderBuilderEditor();
+      } else {
+        renderRows([], userUnit);
+        if (inputMode === "image") {
+          lastParsedItemsByMode.image = [];
+        } else {
+          lastParsedItemsByMode.text = [];
+        }
+        updateEditParsedButton();
+      }
+      xmlOutput.value = "";
+      downloadBtn.disabled = true;
+      setStatus(inputMode === "build" ? "No valid builder blocks found. Fill block values." : "No recognizable workout steps were found.", true);
       return;
     }
-    rows = parseWorkout(parsedSourceText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
-    displayItems = buildDisplayItems(parsedSourceText, walkingSpeedKmh, conversationalSpeedKmh, defaultIncline);
-  }
 
-  const xmlUnit = currentXmlUnit();
-  if (!rows.length) {
+    setCachedRowsForMode(inputMode, rows);
+    const xml = generateXml(rows, xmlUnit);
     if (inputMode === "build") {
       renderBuilderEditor();
     } else {
-      renderRows([], userUnit);
+      renderRows(displayItems, userUnit);
       if (inputMode === "image") {
-        lastParsedItemsByMode.image = [];
+        lastParsedItemsByMode.image = cloneDisplayItems(displayItems);
       } else {
-        lastParsedItemsByMode.text = [];
+        lastParsedItemsByMode.text = cloneDisplayItems(displayItems);
       }
       updateEditParsedButton();
     }
-    xmlOutput.value = "";
-    downloadBtn.disabled = true;
-    setStatus(inputMode === "build" ? "No valid builder blocks found. Fill block values." : "No recognizable workout steps were found.", true);
-    return;
+    xmlOutput.value = xml;
+    downloadBtn.disabled = false;
+    const autoSwitchNote = autoSwitchedUnit ? ` Auto-switched workout unit to ${autoSwitchedUnit === "mi" ? "miles" : "km"}.` : "";
+    setStatus(`Generated ${rows.length} rows (${xmlUnit === "mi" ? "mi/mph" : "km/kmh"} XML).${autoSwitchNote}`);
+  } finally {
+    setGenerateLoading(false);
   }
-
-  const xml = generateXml(rows, xmlUnit);
-  if (inputMode === "build") {
-    renderBuilderEditor();
-  } else {
-    renderRows(displayItems, userUnit);
-    if (inputMode === "image") {
-      lastParsedItemsByMode.image = cloneDisplayItems(displayItems);
-    } else {
-      lastParsedItemsByMode.text = cloneDisplayItems(displayItems);
-    }
-    updateEditParsedButton();
-  }
-  xmlOutput.value = xml;
-  downloadBtn.disabled = false;
-  setStatus(`Generated ${rows.length} rows (${xmlUnit === "mi" ? "mi/mph" : "km/kmh"} XML).`);
 });
 
 downloadBtn.addEventListener("click", () => {
@@ -2098,6 +2235,8 @@ downloadBtn.addEventListener("click", () => {
   a.remove();
   URL.revokeObjectURL(url);
 });
+
+window.addEventListener("beforeunload", clearImagePreview);
 
 workoutInput.value = `2km warm up at a conversational pace (no faster than 7:05/km)
 90s walking rest

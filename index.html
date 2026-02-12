@@ -39,6 +39,10 @@
           <label class="form-label" for="workoutImageInput">Runna workout image</label>
           <input class="form-control" id="workoutImageInput" type="file" accept="image/*">
           <p class="mode-note mt-2">Upload a screenshot from Runna and click Generate workout.</p>
+          <div id="imagePreviewWrap" class="image-preview-wrap mt-2" hidden>
+            <p class="image-preview-label">Uploaded image preview</p>
+            <img id="imagePreview" class="image-preview-img" alt="Uploaded Runna workout preview">
+          </div>
           <div class="row g-2 mt-1">
             <div class="col-md-6">
               <label class="form-label" for="ocrEngineSelect">OCR engine</label>
@@ -55,10 +59,6 @@
               </div>
             </div>
           </div>
-          <details id="ocrDebugWrap" class="mt-2" hidden>
-            <summary>OCR extracted text (debug)</summary>
-            <textarea class="form-control mt-2" id="ocrDebugOutput" rows="8" readonly></textarea>
-          </details>
         </div>
 
         <div id="buildInputSection" class="mode-section">

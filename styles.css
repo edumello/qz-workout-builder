@@ -97,6 +97,31 @@ body {
   font-size: 13px;
 }
 
+.image-preview-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+}
+
+.image-preview-label {
+  margin: 0 0 8px;
+  color: #263645;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.image-preview-img {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  max-height: 680px;
+  border-radius: 8px;
+  border: 1px solid #c6d4e1;
+  object-fit: contain;
+  background: #f8fbfd;
+}
+
 .options-header {
   border-bottom: 1px solid var(--border);
   padding-bottom: 8px;
