@@ -16,22 +16,32 @@
       <textarea id="workoutInput" rows="12" placeholder="Paste workout text here..."></textarea>
 
       <div class="options">
-        <label for="unitMode">Target mode</label>
-        <select id="unitMode">
-          <option value="pace_km">PACE (km)</option>
-          <option value="pace_mile">PACE (miles)</option>
-          <option value="speed_kmh" selected>KMH</option>
-          <option value="speed_mph">MILES</option>
-        </select>
+        <div class="field">
+          <label for="unitToggle">Unit</label>
+          <div class="toggle-wrap">
+            <span id="unitKmLabel">km</span>
+            <label class="switch" for="unitToggle" aria-label="Toggle between km and miles">
+              <input id="unitToggle" type="checkbox">
+              <span class="slider"></span>
+            </label>
+            <span id="unitMilesLabel">miles</span>
+          </div>
+        </div>
 
-        <label for="walkingTarget" id="walkingTargetLabel">Walking speed (km/h)</label>
-        <input id="walkingTarget" type="text" value="4.0">
+        <div class="field">
+          <label for="walkingTarget" id="walkingTargetLabel">Walking pace (mm:ss/km)</label>
+          <input id="walkingTarget" type="text" value="15:00">
+        </div>
 
-        <label for="conversationalTarget" id="conversationalTargetLabel">Conversational pace (km/h)</label>
-        <input id="conversationalTarget" type="text" value="7.4">
+        <div class="field">
+          <label for="conversationalTarget" id="conversationalTargetLabel">Conversational pace (mm:ss/km)</label>
+          <input id="conversationalTarget" type="text" value="8:06">
+        </div>
 
-        <label for="defaultIncline">Default incline % (optional)</label>
-        <input id="defaultIncline" type="number" min="0" max="20" step="0.1" placeholder="e.g. 1.0">
+        <div class="field">
+          <label for="defaultIncline">Default incline % (optional)</label>
+          <input id="defaultIncline" type="number" min="0" max="20" step="0.1" placeholder="e.g. 1.0">
+        </div>
       </div>
 
       <div class="actions">

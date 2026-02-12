@@ -8,13 +8,10 @@ Static web app to convert Runna workout text into `qdomyos-zwift` treadmill XML 
 - Handle basic repeats:
   - `Repeat the following 2x: ---------- ... ----------`
   - `3 reps of: 400m at 5:35/km, 60s walking rest`
-- Unit modes for user targets:
-  - `PACE (km)`
-  - `PACE (miles)`
-  - `KMH`
-  - `MILES` (mph)
+- Unit slider for user pace inputs: `km` or `miles`
 - Conversational pace is configurable by the user
 - Convert pace to treadmill speed (`km/h`) for XML export
+- Show both `km/h` and pace in parsed rows preview
 - Keep original matched Runna text in parsed rows preview
 - Export XML using `forcespeed="1"` on every row
 - Optional default incline (`inclination` attribute) for distance rows
