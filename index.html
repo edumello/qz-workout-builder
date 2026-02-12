@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QZ Workout Builder</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <h1>Runna to QZ XML</h1>
+    <p class="subtitle">Paste workout text from your calendar and generate treadmill XML.</p>
+
+    <section class="panel">
+      <label for="workoutInput">Runna workout text</label>
+      <textarea id="workoutInput" rows="12" placeholder="Paste workout text here..."></textarea>
+
+      <div class="options">
+        <label for="walkingSpeed">Walking speed (km/h)</label>
+        <input id="walkingSpeed" type="number" min="2" max="8" step="0.1" value="4.0">
+
+        <label for="easySpeed">Fallback easy speed (km/h)</label>
+        <input id="easySpeed" type="number" min="4" max="12" step="0.1" value="7.4">
+      </div>
+
+      <div class="actions">
+        <button id="parseBtn" type="button">Generate XML</button>
+        <button id="downloadBtn" type="button" disabled>Download XML</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Parsed rows</h2>
+      <div id="rowsOutput" class="rows-output"></div>
+    </section>
+
+    <section class="panel">
+      <h2>XML output</h2>
+      <textarea id="xmlOutput" rows="14" readonly></textarea>
+      <p id="status" class="status"></p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
