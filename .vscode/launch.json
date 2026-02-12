@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Open QZ Workout Builder",
+      "name": "Open qdomyos-zwift Workout Builder",
       "type": "pwa-firefox",
       "request": "launch",
       "url": "http://localhost:3000",
