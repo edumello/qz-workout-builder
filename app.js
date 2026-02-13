@@ -34,6 +34,8 @@ const xmlUnitKmInput = document.getElementById("xmlUnitKm");
 const xmlUnitMilesInput = document.getElementById("xmlUnitMiles");
 
 const KM_PER_MILE = 1.60934;
+const DEFAULT_WALKING_KMH = 4.0;
+const DEFAULT_CONVERSATIONAL_KMH = 7.4;
 let scribeModulePromise = null;
 let scribeUnavailable = false;
 let currentImagePreviewUrl = null;
@@ -41,6 +43,10 @@ let inputMode = "text";
 let builderIdCounter = 1;
 let builderBlocks = [];
 let builderSortables = [];
+const lastValidWorkoutTargetKmh = {
+  walking: DEFAULT_WALKING_KMH,
+  conversational: DEFAULT_CONVERSATIONAL_KMH
+};
 const lastParsedItemsByMode = {
   text: [],
   image: []
@@ -96,8 +102,37 @@ function getWorkoutTargetModeForMode(mode) {
   return mode === "build" && currentBuilderInputMode() === "speed" ? "speed" : "pace";
 }
 
+function normalizeLoosePaceText(paceText) {
+  const raw = String(paceText || "").trim();
+  if (!raw) return null;
+  const compact = raw.replace(/\s+/g, "").replace(/[;,]/g, ":");
+
+  if (/^\d{1,2}$/.test(compact)) {
+    return `${String(Number(compact))}:00`;
+  }
+
+  let match = compact.match(/^(\d{1,2}):$/);
+  if (match) {
+    return `${String(Number(match[1]))}:00`;
+  }
+
+  match = compact.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (match) {
+    return `${String(Number(match[1]))}:${String(match[2]).padStart(2, "0")}`;
+  }
+
+  match = compact.match(/^(\d{1,2})(\d{2})$/);
+  if (match) {
+    return `${String(Number(match[1]))}:${match[2]}`;
+  }
+
+  return compact;
+}
+
 function parsePaceToKmh(paceText, unitText) {
-  const match = paceText.trim().match(/^(\d{1,2}):(\d{2})$/);
+  const normalized = normalizeLoosePaceText(paceText);
+  if (!normalized) return null;
+  const match = normalized.match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
   const mins = Number(match[1]);
   const secs = Number(match[2]);
@@ -140,6 +175,12 @@ function formatSpeedForUnit(kmh, unitText) {
   return `${formatKmh(kmh)} km/h`;
 }
 
+function formatEditableSpeedValue(speedKmh, userUnit) {
+  if (!Number.isFinite(speedKmh) || speedKmh <= 0) return "";
+  const speedInUnit = normalizePaceUnit(userUnit) === "mi" ? speedKmh / KM_PER_MILE : speedKmh;
+  return speedInUnit.toFixed(1);
+}
+
 function speedUnitLabel(unitText) {
   return normalizePaceUnit(unitText) === "mi" ? "mph" : "km/h";
 }
@@ -161,8 +202,58 @@ function parseWorkoutTargetToKmh(value, unitText, targetMode) {
 
 function formatWorkoutTargetFromKmh(kmh, unitText, targetMode) {
   if (!Number.isFinite(kmh)) return "";
-  if (targetMode === "speed") return formatBuilderSpeedValue(kmh, unitText);
+  if (targetMode === "speed") return formatEditableSpeedValue(kmh, unitText);
   return kmhToPace(kmh, unitText);
+}
+
+function getWorkoutTargetKey(inputEl) {
+  if (inputEl === walkingTargetInput) return "walking";
+  if (inputEl === conversationalTargetInput) return "conversational";
+  return null;
+}
+
+function getLastValidWorkoutTargetKmh(targetKey) {
+  if (targetKey === "walking") {
+    return Number.isFinite(lastValidWorkoutTargetKmh.walking)
+      ? lastValidWorkoutTargetKmh.walking
+      : DEFAULT_WALKING_KMH;
+  }
+  if (targetKey === "conversational") {
+    return Number.isFinite(lastValidWorkoutTargetKmh.conversational)
+      ? lastValidWorkoutTargetKmh.conversational
+      : DEFAULT_CONVERSATIONAL_KMH;
+  }
+  return DEFAULT_CONVERSATIONAL_KMH;
+}
+
+function setWorkoutTargetFromKmh(inputEl, targetKey, kmh, unit = currentUserUnit(), targetMode = getWorkoutTargetModeForMode(inputMode)) {
+  if (!inputEl || !targetKey || !Number.isFinite(kmh)) return false;
+  inputEl.value = formatWorkoutTargetFromKmh(kmh, unit, targetMode);
+  lastValidWorkoutTargetKmh[targetKey] = kmh;
+  return true;
+}
+
+function commitWorkoutTargetField(inputEl, options = {}) {
+  if (!inputEl) return false;
+  const targetKey = getWorkoutTargetKey(inputEl);
+  if (!targetKey) return false;
+
+  const targetMode = options.targetMode || getWorkoutTargetModeForMode(inputMode);
+  const unit = options.unit || currentUserUnit();
+  const revertOnInvalid = Boolean(options.revertOnInvalid);
+
+  const kmh = parseWorkoutTargetToKmh(inputEl.value.trim(), unit, targetMode);
+  if (Number.isFinite(kmh)) {
+    setWorkoutTargetFromKmh(inputEl, targetKey, kmh, unit, targetMode);
+    return true;
+  }
+
+  if (revertOnInvalid) {
+    const fallbackKmh = getLastValidWorkoutTargetKmh(targetKey);
+    setWorkoutTargetFromKmh(inputEl, targetKey, fallbackKmh, unit, targetMode);
+    return true;
+  }
+  return false;
 }
 
 function formatIncline(value) {
@@ -480,6 +571,9 @@ function parseSpeedOrPaceToKmh(text, fallbackUnit = "km") {
   // Bare pace style without explicit unit uses current workout unit as fallback.
   const barePaceMatch = normalizedValue.match(/\b(\d{1,2}:\d{2})\b/);
   if (barePaceMatch) {
+    const after = normalizedValue.slice((barePaceMatch.index || 0) + barePaceMatch[0].length);
+    if (/\b(?:am|pm)\b/i.test(after)) return null;
+    if (/\b(?:synced|schedule|week|description)\b/i.test(normalizedValue)) return null;
     return parsePaceToKmh(barePaceMatch[1], fallbackUnit);
   }
 
@@ -492,9 +586,9 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
     .map((line) => line.replace(/[ \t]+/g, " ").trim())
     .filter(Boolean);
 
-  const descriptionIndex = lines.findIndex((line) => /^description\b/i.test(String(line).toLowerCase()));
+  const descriptionIndex = lines.findIndex((line) => /\bdescription\b/i.test(String(line).toLowerCase()));
   const workoutLines = descriptionIndex >= 0 ? lines.slice(descriptionIndex + 1) : lines;
-  const hasStepMarkers = workoutLines.some((line) => /^\d{1,2}$/.test(String(line).trim()));
+  const hasStepMarkers = workoutLines.some((line) => /^\(?\d{1,2}\)?(?:\s|$)/.test(String(line).trim()));
 
   const rows = [];
   const items = [];
@@ -584,18 +678,34 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
       .replace(/[1|!]/g, "l")
       .replace(/[0]/g, "o");
 
-    const patterns = [
-      /\brepe?a?t(?:\s+the\s+following)?\s*x?\s*(\d{1,2})\b/i,
-      /\b(?:x)\s*(\d{1,2})\b/i,
-      /\b(\d{1,2})\s*(?:x)\b/i,
-      /\bepeat(?:\s+the\s+following)?\s*x?\s*(\d{1,2})\b/i
+    const repeatWordPattern = /\brepe?a?t(?:\s+the\s+following)?\s*x?\s*(\d{1,2})\b/i;
+    const repeatWordMatch = normalized.match(repeatWordPattern) || fuzzy.match(repeatWordPattern);
+    if (repeatWordMatch && Number.isFinite(Number(repeatWordMatch[1]))) {
+      return {
+        count: Math.max(1, Number(repeatWordMatch[1])),
+        endIndex: (repeatWordMatch.index || 0) + repeatWordMatch[0].length
+      };
+    }
+
+    const epeatWordPattern = /\bepeat(?:\s+the\s+following)?\s*x?\s*(\d{1,2})\b/i;
+    const epeatWordMatch = normalized.match(epeatWordPattern) || fuzzy.match(epeatWordPattern);
+    if (epeatWordMatch && Number.isFinite(Number(epeatWordMatch[1]))) {
+      return {
+        count: Math.max(1, Number(epeatWordMatch[1])),
+        endIndex: (epeatWordMatch.index || 0) + epeatWordMatch[0].length
+      };
+    }
+
+    const markerOnlyPatterns = [
+      /^\s*x\s*(\d{1,2})\s*$/i,
+      /^\s*(\d{1,2})\s*x\s*$/i
     ];
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern) || fuzzy.match(pattern);
-      if (match && Number.isFinite(Number(match[1]))) {
+    for (const pattern of markerOnlyPatterns) {
+      const markerOnly = normalized.match(pattern);
+      if (markerOnly && Number.isFinite(Number(markerOnly[1]))) {
         return {
-          count: Math.max(1, Number(match[1])),
-          endIndex: (match.index || 0) + match[0].length
+          count: Math.max(1, Number(markerOnly[1])),
+          endIndex: markerOnly[0].length
         };
       }
     }
@@ -609,31 +719,45 @@ function parseRunnaImageWorkout(ocrText, userUnit, walkingSpeedKmh, conversation
         };
       }
     }
+
     return null;
   }
   for (const rawLine of workoutLines) {
     let line = rawLine
       .replace(/\s*\([^)]*\)/g, (m) => m.toLowerCase().includes("repeat") ? m : m)
+      .replace(/^[^\w\d]*(?=\w|\d)/, "")
       .trim();
     let lower = line.toLowerCase();
 
-    if (/^\d{1,2}$/.test(lower)) {
+    if (/^\(?\d{1,2}\)?$/.test(lower)) {
       sawFirstStepMarker = true;
       continue;
+    }
+
+    const prefixedStepMatch = line.match(/^\(?\d{1,2}\)?\s+(.+)$/);
+    if (prefixedStepMatch) {
+      sawFirstStepMarker = true;
+      line = prefixedStepMatch[1].trim();
+      lower = line.toLowerCase();
     }
 
     if (
       /^(week\s+\d+|schedule|description|outdoor|treadmill|warm-up stretches|add route|link activity|skip workout|start workout|coach |workout notes|synced )/i.test(lower) ||
       /^(sources:|distance\b|time\b|avg pace\b)/i.test(lower) ||
       /^(feb|jan|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(lower) ||
-      /^\d{1,2}:\d{2}$/.test(lower)
+      /^\d{1,2}:\d{2}$/.test(lower) ||
+      /\bsynced\b/i.test(lower) ||
+      /(warm[\-\u2013\u2014]?\s*up\s+add\s+link\s+skip|stretches\s+route\s+activity\s+workout)/i.test(lower)
     ) {
       continue;
     }
 
     const isSectionHeader = /^(warm[\-\u2013\u2014]?\s*up|cool\s*down|rest\b|session\b)/i.test(lower) || Boolean(extractRepeatMarker(lower));
     if (hasStepMarkers && !sawFirstStepMarker && !isSectionHeader) {
-      continue;
+      const looksLikeWorkoutLine = /(\d+(?:[.,]\d+)?\s*(?:km|mi|mile|miles|m)\b|\d+\s*s?\s*walking rest\b|no faster than\b|conversational(?:\s+pace)?\b)/i.test(lower);
+      if (!looksLikeWorkoutLine) {
+        continue;
+      }
     }
 
     const repeatMarker = extractRepeatMarker(lower);
@@ -1505,6 +1629,66 @@ function regenerateXmlFromCachedRows(mode = inputMode) {
   return true;
 }
 
+function rowUsesConversationalTarget(row) {
+  if (!row) return false;
+  if (row.type === "warmup" || row.type === "cooldown") return true;
+  return /conversational pace/i.test(String(row.source || ""));
+}
+
+function applyTargetsToRow(row, walkingSpeedKmh, conversationalSpeedKmh) {
+  if (!row) return row;
+  if (row.type === "walkrest") {
+    return { ...row, speedKmh: walkingSpeedKmh };
+  }
+  if (rowUsesConversationalTarget(row)) {
+    return { ...row, speedKmh: conversationalSpeedKmh };
+  }
+  return { ...row };
+}
+
+function applyTargetsToDisplayItems(items, walkingSpeedKmh, conversationalSpeedKmh) {
+  return (items || []).map((item) => {
+    if (item.kind === "row") {
+      return { ...item, row: applyTargetsToRow(item.row, walkingSpeedKmh, conversationalSpeedKmh) };
+    }
+    if (item.kind === "group" || item.kind === "section") {
+      return {
+        ...item,
+        items: applyTargetsToDisplayItems(item.items || [], walkingSpeedKmh, conversationalSpeedKmh)
+      };
+    }
+    return { ...item };
+  });
+}
+
+function refreshImageDerivedOutputsFromTargets() {
+  if (inputMode !== "image") return false;
+  const cachedRows = getCachedRowsForMode("image");
+  if (!cachedRows.length) return false;
+
+  const unit = currentUserUnit();
+  const targetMode = getWorkoutTargetModeForMode("image");
+  const walkingSpeedKmh = parseWorkoutTargetToKmh(walkingTargetInput.value.trim(), unit, targetMode);
+  const conversationalSpeedKmh = parseWorkoutTargetToKmh(conversationalTargetInput.value.trim(), unit, targetMode);
+  if (!Number.isFinite(walkingSpeedKmh) || !Number.isFinite(conversationalSpeedKmh)) {
+    return false;
+  }
+
+  const updatedRows = cachedRows.map((row) => applyTargetsToRow(row, walkingSpeedKmh, conversationalSpeedKmh));
+  setCachedRowsForMode("image", updatedRows);
+
+  if (countDisplayRows(lastParsedItemsByMode.image) > 0) {
+    const updatedItems = applyTargetsToDisplayItems(lastParsedItemsByMode.image, walkingSpeedKmh, conversationalSpeedKmh);
+    lastParsedItemsByMode.image = cloneDisplayItems(updatedItems);
+    renderRows(updatedItems, unit);
+    updateEditParsedButton();
+  }
+
+  xmlOutput.value = generateXml(updatedRows, currentXmlUnit());
+  downloadBtn.disabled = !xmlOutput.value.trim();
+  return true;
+}
+
 function rowTypeToBuilderType(rowType) {
   if (rowType === "warmup") return "warmup";
   if (rowType === "cooldown") return "cooldown";
@@ -1849,10 +2033,15 @@ function onUnitChange() {
   const prevUnit = nextUnit === "mi" ? "km" : "mi";
   const targetMode = getWorkoutTargetModeForMode(inputMode);
   convertUserPaceInputs(prevUnit, nextUnit, targetMode, targetMode);
+  commitWorkoutTargetField(walkingTargetInput, { revertOnInvalid: true, unit: nextUnit, targetMode });
+  commitWorkoutTargetField(conversationalTargetInput, { revertOnInvalid: true, unit: nextUnit, targetMode });
   updatePaceLabels(nextUnit, targetMode);
   if (inputMode === "build" && builderBlocks.length) {
     builderBlocks = convertBuilderUnits(builderBlocks, prevUnit, nextUnit);
     renderBuilderEditor();
+  }
+  if (inputMode === "image") {
+    refreshImageDerivedOutputsFromTargets();
   }
 }
 
@@ -1861,16 +2050,37 @@ function onBuilderInputModeChange() {
   const prevTargetMode = nextTargetMode === "speed" ? "pace" : "speed";
   const unit = currentUserUnit();
   convertUserPaceInputs(unit, unit, prevTargetMode, nextTargetMode);
+  commitWorkoutTargetField(walkingTargetInput, { revertOnInvalid: true, unit, targetMode: nextTargetMode });
+  commitWorkoutTargetField(conversationalTargetInput, { revertOnInvalid: true, unit, targetMode: nextTargetMode });
   updatePaceLabels(unit, nextTargetMode);
   if (inputMode === "build") {
     renderBuilderEditor();
   }
 }
 
+function normalizeWorkoutTargetField(inputEl) {
+  return commitWorkoutTargetField(inputEl, { revertOnInvalid: true });
+}
+
+function onTargetInputsEdited(event) {
+  const target = event?.target;
+  if (target instanceof HTMLInputElement && (event.type === "change" || event.type === "blur")) {
+    normalizeWorkoutTargetField(target);
+  }
+  if (inputMode !== "image") return;
+  refreshImageDerivedOutputsFromTargets();
+}
+
 unitKmInput.addEventListener("change", onUnitChange);
 unitMilesInput.addEventListener("change", onUnitChange);
 buildInputPace.addEventListener("change", onBuilderInputModeChange);
 buildInputSpeed.addEventListener("change", onBuilderInputModeChange);
+walkingTargetInput.addEventListener("input", onTargetInputsEdited);
+walkingTargetInput.addEventListener("change", onTargetInputsEdited);
+walkingTargetInput.addEventListener("blur", onTargetInputsEdited);
+conversationalTargetInput.addEventListener("input", onTargetInputsEdited);
+conversationalTargetInput.addEventListener("change", onTargetInputsEdited);
+conversationalTargetInput.addEventListener("blur", onTargetInputsEdited);
 modeTextBtn.addEventListener("click", () => setInputMode("text"));
 modeImageBtn.addEventListener("click", () => setInputMode("image"));
 modeBuildBtn.addEventListener("click", () => setInputMode("build"));
@@ -2053,13 +2263,13 @@ function onBuilderFieldEdit(event) {
         const fallbackKmh = parseSpeedToKmh(block.speed, currentUserUnit()) || parsePaceToKmh(block.pace || "", currentUserUnit()) || 10;
         return {
           ...block,
-          speed: formatBuilderSpeedValue(fallbackKmh, currentUserUnit()),
+          speed: formatEditableSpeedValue(fallbackKmh, currentUserUnit()),
           pace: kmhToPace(fallbackKmh, currentUserUnit())
         };
       }
       return {
         ...block,
-        speed: formatBuilderSpeedValue(speedKmh, currentUserUnit()),
+        speed: formatEditableSpeedValue(speedKmh, currentUserUnit()),
         pace: kmhToPace(speedKmh, currentUserUnit())
       };
     }
@@ -2087,6 +2297,9 @@ parseBtn.addEventListener("click", async () => {
       setStatus("Default incline must be a number when provided.", true);
       return;
     }
+
+    commitWorkoutTargetField(walkingTargetInput, { revertOnInvalid: true, unit: userUnit, targetMode: workoutTargetMode });
+    commitWorkoutTargetField(conversationalTargetInput, { revertOnInvalid: true, unit: userUnit, targetMode: workoutTargetMode });
 
     let rows = [];
     let displayItems = [];
@@ -2249,5 +2462,7 @@ Repeat the following 2x:
 ----------
 
 2km cool down at a conversational pace (or slower!)`;
+commitWorkoutTargetField(walkingTargetInput, { revertOnInvalid: true, unit: currentUserUnit(), targetMode: getWorkoutTargetModeForMode("text") });
+commitWorkoutTargetField(conversationalTargetInput, { revertOnInvalid: true, unit: currentUserUnit(), targetMode: getWorkoutTargetModeForMode("text") });
 updatePaceLabels(currentUserUnit());
 setInputMode("text");

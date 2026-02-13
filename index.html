@@ -36,6 +36,10 @@
         </div>
 
         <div id="imageInputSection" class="mode-section">
+          <div class="alert alert-warning d-flex align-items-start gap-2 py-2 px-3 mb-3" role="alert">
+            <span class="fw-bold" aria-hidden="true">!</span>
+            <span>OCR is not entirely reliable. Please review Parsed rows and use <strong>Edit</strong> if needed.</span>
+          </div>
           <label class="form-label" for="workoutImageInput">Runna workout image</label>
           <input class="form-control" id="workoutImageInput" type="file" accept="image/*">
           <p class="mode-note mt-2">Upload a screenshot from Runna and click Generate workout.</p>
@@ -113,6 +117,10 @@
               <button class="btn btn-primary" id="parseBtn" type="button">Generate workout</button>
             </div>
           </div>
+
+          <div class="col-12 field">
+            <p id="status" class="status mb-0"></p>
+          </div>
         </div>
 
       </div>
@@ -142,13 +150,12 @@
             <label for="xmlUnitMiles">miles</label>
           </div>
         </div>
-        <div class="xml-actions">
+      <div class="xml-actions">
           <button class="btn btn-primary" id="parseXmlBtn" type="button" hidden>Generate XML</button>
           <button class="btn btn-primary" id="downloadBtn" type="button" disabled>Download XML</button>
         </div>
       </div>
       <textarea class="form-control xml-output" id="xmlOutput" rows="14" readonly></textarea>
-      <p id="status" class="status"></p>
       </div>
     </section>
   </main>

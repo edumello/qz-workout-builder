@@ -30,6 +30,52 @@ test("converts user pace values when unit changes", async ({ page }) => {
   await expect(page.locator("#conversationalTarget")).toHaveValue("8:06");
 });
 
+test("normalizes incomplete workout target pace/speed inputs", async ({ page }) => {
+  await page.goto("/");
+
+  await page.fill("#walkingTarget", "20");
+  await page.fill("#conversationalTarget", "7:7");
+  await page.locator("#conversationalTarget").press("Tab");
+
+  await expect(page.locator("#walkingTarget")).toHaveValue("20:00");
+  await expect(page.locator("#conversationalTarget")).toHaveValue("7:07");
+
+  await page.evaluate(() => setInputMode("build"));
+  await page.locator('label[for="buildInputSpeed"]').click();
+  await page.fill("#walkingTarget", "8");
+  await page.locator("#walkingTarget").press("Tab");
+
+  await expect(page.locator("#walkingTarget")).toHaveValue("8.0");
+});
+
+test("reverts invalid workout target values to previous valid value across tabs", async ({ page }) => {
+  await page.goto("/");
+
+  // Text tab (pace mode)
+  await page.fill("#walkingTarget", "8:07");
+  await page.locator("h1").click();
+  await page.fill("#walkingTarget", "07:15:15");
+  await page.locator("h1").click();
+  await expect(page.locator("#walkingTarget")).toHaveValue("8:07");
+
+  // Image tab (pace mode)
+  await page.evaluate(() => setInputMode("image"));
+  await page.fill("#conversationalTarget", "9:09");
+  await page.locator("h1").click();
+  await page.fill("#conversationalTarget", "abc");
+  await page.locator("h1").click();
+  await expect(page.locator("#conversationalTarget")).toHaveValue("9:09");
+
+  // Build tab (speed mode)
+  await page.evaluate(() => setInputMode("build"));
+  await page.locator('label[for="buildInputSpeed"]').click();
+  await page.fill("#walkingTarget", "8.2");
+  await page.locator("h1").click();
+  await page.fill("#walkingTarget", "bad");
+  await page.locator("h1").click();
+  await expect(page.locator("#walkingTarget")).toHaveValue("8.2");
+});
+
 test("generates parsed rows and XML", async ({ page }) => {
   await page.goto("/");
 
@@ -290,6 +336,44 @@ test("xml unit toggle in image mode uses cached rows and does not rerun OCR", as
   expect(ocrCalled).toBe(0);
 });
 
+test("image mode target edits refresh parsed rows and xml without OCR", async ({ page }) => {
+  await page.goto("/");
+
+  await page.evaluate(() => {
+    setInputMode("image");
+    window.__ocrCalled = 0;
+    const originalOcr = window.extractWorkoutTextFromImageFile;
+    window.extractWorkoutTextFromImageFile = async (...args) => {
+      window.__ocrCalled += 1;
+      return originalOcr(...args);
+    };
+
+    const seedRows = [
+      { type: "warmup", distance: 1, speedKmh: 7.4, source: "1km at a conversational pace" },
+      { type: "walkrest", duration: "00:01:30", speedKmh: 4.0, source: "90s walking rest" },
+      { type: "run", distance: 1, speedKmh: 10.0, source: "1km at 6:00/km" }
+    ];
+    const seedItems = seedRows.map((row) => ({ kind: "row", row }));
+    setCachedRowsForMode("image", seedRows);
+    lastParsedItemsByMode.image = cloneDisplayItems(seedItems);
+    renderRows(seedItems, currentUserUnit());
+    document.getElementById("xmlOutput").value = generateXml(seedRows, "km");
+  });
+
+  await page.fill("#walkingTarget", "12:00");
+  await page.fill("#conversationalTarget", "7:30");
+
+  await expect(page.locator("#rowsOutput")).toContainText("12:00/km");
+  await expect(page.locator("#rowsOutput")).toContainText("7:30/km");
+
+  const xml = await page.locator("#xmlOutput").inputValue();
+  expect(xml).toContain('duration="00:01:30" speed="5.0"');
+  expect(xml).toContain('distance="1" speed="8.0"');
+
+  const ocrCalled = await page.evaluate(() => window.__ocrCalled);
+  expect(ocrCalled).toBe(0);
+});
+
 test("image OCR unit auto-switches back to km when km is detected", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => setInputMode("image"));
@@ -344,4 +428,82 @@ test("does not invent repeat blocks when OCR misses repeat header text", async (
 
   const inferredGroups = parsed.items.filter((item) => item.kind === "group" && item.label === "Repeat");
   expect(inferredGroups).toHaveLength(0);
+});
+
+test("ignores title and toolbar noise in long-run OCR screenshot", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "TT Fr",
+      "2:27 li al TEE",
+      "& Week7 M O",
+      "FEB 13,2026 (J SCHEDULE",
+      "10km Block Long Run",
+      "Long Run - 10km",
+      "® 1hOm-1h20m Synced 02/11/2026 at 8:21PM &",
+      "(5)",
+      "WARM-UP ADD LINK SKIP",
+      "STRETCHES ROUTE ACTIVITY WORKOUT",
+      "(J) Description OUTDOOR",
+      "1 3km at a conversational pace (0) ZX RUN",
+      "2 4.5km at 8.8kph & RUN",
+      "3 2.5km at a conversational pace () ZX RUN"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  expect(parsed.rows).toHaveLength(3);
+  expect(parsed.rows.map((row) => Number((row.distance || 0).toFixed(3)))).toEqual([3, 4.5, 2.5]);
+  expect(parsed.rows.some((row) => Number((row.distance || 0).toFixed(2)) === 10)).toBeFalsy();
+  expect(parsed.rows[0].type).toBe("run");
+});
+
+test("keeps trailing run row when OCR line contains '2X RUN' marker text", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "Description",
+      "1km at a conversational pace",
+      "No faster than 8.6kph",
+      "120s walking rest",
+      "5km time trial at 9.9kph 2X RUN"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  expect(parsed.rows).toHaveLength(3);
+  expect(parsed.rows.map((r) => r.type)).toEqual(["run", "walkrest", "run"]);
+  expect(parsed.rows[2].distance).toBeCloseTo(5, 2);
+  expect(parsed.items.some((i) => i.kind === "group")).toBeFalsy();
+});
+
+test("keeps first conversational row before first explicit step marker", async ({ page }) => {
+  await page.goto("/");
+
+  const parsed = await page.evaluate(() => parseRunnaImageWorkout(
+    [
+      "Description",
+      "1.5km at a conversational pace",
+      "No faster than 8.6kph",
+      "Session (2 - 4)",
+      "2 2km at 9.7kph",
+      "120s walking rest"
+    ].join("\n"),
+    "km",
+    4.0,
+    7.4,
+    null
+  ));
+
+  expect(parsed.rows).toHaveLength(3);
+  expect(parsed.rows[0].distance).toBeCloseTo(1.5, 2);
+  expect(parsed.rows[1].distance).toBeCloseTo(2, 2);
 });
