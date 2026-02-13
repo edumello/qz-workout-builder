@@ -1,64 +1,79 @@
 # qz-workout-builder
 
-Static web app to convert Runna workout text into `qdomyos-zwift` treadmill XML rows.
+Static web app to convert Runna workouts into `qdomyos-zwift` treadmill XML rows.
 
 > Thanks to the `qdomyos-zwift` project: https://github.com/cagnulein/qdomyos-zwift  
 > This builder is explicitly intended to generate workout XML files for use with the `qdomyos-zwift` app.
 
 ## Features
 
-- Parse common Runna text blocks (warm up, cool down, distance + pace, walking rests)
-- Handle basic repeats:
-  - `Repeat the following 2x: ---------- ... ----------`
-  - `3 reps of: 400m at 5:35/km, 60s walking rest`
-- Input tabs:
-  - `Runna Workout Text` (implemented)
-  - `Runna Workout Image` (placeholder)
-  - `Build your own` (placeholder)
-- Unit slider for workout inputs and parsed preview: `km` or `miles`
-- Conversational pace is configurable by the user
-- Nested parsed rows preview with repeat blocks and section headers
-- Keep original matched Runna text in parsed rows preview
-- XML output unit toggle: `km` or `miles`
-- Export XML with `forcespeed="1"` on every row
-- Optional default incline (`inclination` attribute) for distance rows
-- Download generated XML directly from the browser
+- Three input modes:
+  - `Runna Workout Text`: paste workout text and parse it.
+  - `Runna Workout Image`: upload a screenshot and parse with OCR.
+  - `Build your own`: create blocks manually with drag and drop.
+- Text parser support for common Runna structures:
+  - warm-up/cool-down
+  - distance + pace or speed blocks
+  - walking rest blocks
+  - repeat patterns (`Repeat xN`, `N reps of`)
+- OCR workflow (Image tab):
+  - OCR engine selector (`Auto`, `Scribe`, `Tesseract`)
+  - optional image preprocessing
+  - uploaded image preview
+  - automatic unit detection (`km`/`miles`) from OCR text
+  - OCR debug text logged to browser console
+- Build mode:
+  - add/remove/reorder blocks
+  - nest blocks inside repeat blocks
+  - choose run input mode (`Pace` or `Speed`)
+  - generate XML from builder blocks
+- Shared workout options:
+  - `Unit` slider (`km` / `miles`)
+  - `Walking` and `Conversational` target fields
+  - optional default incline for distance rows
+- Smart input handling:
+  - normalizes incomplete values (for example `20` -> `20:00`)
+  - invalid edits revert to the last valid value
+- Parsed rows view:
+  - grouped sections and nested repeat blocks
+  - action color coding
+  - `Edit` button to copy parsed rows into Build mode
+- XML output:
+  - always includes `forcespeed="1"`
+  - supports distance rows (`distance`) and rest rows (`duration`)
+  - XML unit toggle (`km`/`miles`) regenerates from cached rows (no OCR rerun)
+  - download XML directly from browser
 
-## How to use it
+## How To Use
 
-1. Open the app and keep `Runna Workout Text` selected.
-2. Paste your workout text in the text area.
-3. In `Workout options`:
-   - choose workout unit (`km` or `miles`)
-   - set `Walking pace`
-   - set `Conversational pace`
-   - optionally set `Default incline`
+### 1. Runna Workout Text
+
+1. Open `Runna Workout Text` tab.
+2. Paste your workout text.
+3. Configure `Workout options`.
 4. Click `Generate workout`.
-5. Review `Parsed rows` to verify structure and paces.
-6. In `XML output`:
-   - choose XML unit (`km` or `miles`)
-   - click `Download XML`
-7. Load the XML file in your treadmill workflow.
+5. Review `Parsed rows`.
+6. In `XML output`, choose XML unit and click `Download XML`.
 
-## Sample input/output
+### 2. Runna Workout Image
 
-### Sample Runna text input
+1. Open `Runna Workout Image` tab.
+2. Upload a Runna screenshot.
+3. Choose OCR settings if needed.
+4. Click `Generate workout`.
+5. Review parsed rows carefully (OCR is not 100% reliable).
+6. Use `Edit` to send the parsed workout to Build mode for manual correction.
+7. Download XML when satisfied.
 
-```text
-2km warm up at a conversational pace (no faster than 7:05/km)
-90s walking rest
+### 3. Build your own
 
-Repeat the following 2x:
-----------
-3 reps of:
-400m at 5:35/km (5:25-5:45/km), 60s walking rest
-60s walking rest
-----------
+1. Open `Build your own` tab.
+2. Add and reorder blocks.
+3. Use repeat blocks for intervals.
+4. Choose whether run inputs are entered as `Pace` or `Speed`.
+5. Click `Generate XML` and then `Download XML`.
 
-2km cool down at a conversational pace (or slower!)
-```
-
-### Sample XML output (km mode)
+## XML Example
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -66,49 +81,24 @@ Repeat the following 2x:
     <row distance="2" speed="7.4" forcespeed="1"/>
     <row duration="00:01:30" speed="4.0" forcespeed="1"/>
     <row distance="0.4" speed="10.7" forcespeed="1"/>
-    <row duration="00:01:00" speed="4.0" forcespeed="1"/>
-    ...
-    <row distance="2" speed="7.4" forcespeed="1"/>
 </rows>
 ```
 
 Notes:
-- Actual output includes all expanded repeats/rests.
-- `speed` is exported in the selected XML unit mode (`km/h` or `mph`).
-- `distance` is exported in the selected XML unit mode (`km` or `mi`).
+- `speed` is exported in selected XML output unit (`km/h` or `mph`).
+- `distance` is exported in selected XML output unit (`km` or `mi`).
+- `duration` uses `HH:MM:SS`.
 
-## Supported text patterns
-
-Current parser supports these common patterns:
-
-- Warm up / cool down by distance:
-  - `2km warm up at a conversational pace ...`
-  - `2km cool down at a conversational pace ...`
-- Pace intervals by distance:
-  - `400m at 5:35/km`
-  - `1.6km at 6:00/km`
-- Walking rest by seconds:
-  - `60s walking rest`
-  - `120s walking rest`
-- Repeats:
-  - `Repeat the following 2x: ---------- ... ----------`
-  - `3 reps of: 400m at 5:35/km, 60s walking rest`
-
-Not currently supported:
-- Arbitrary free-form wording outside these structures.
-- Image/OCR parsing (placeholder tab only).
-- Full custom builder flow (placeholder tab only).
-
-## Run locally (dev)
+## Run Locally
 
 ```powershell
 npm.cmd install
 npm.cmd run dev
 ```
 
-Then open the URL shown in terminal (usually `http://localhost:3000`).
+Open the URL shown in terminal (usually `http://localhost:3000`).
 
-## Run tests (optional)
+## Run Tests
 
 ```powershell
 npm.cmd run test:e2e
@@ -116,16 +106,17 @@ npm.cmd run test:e2e
 
 ## GitHub Pages
 
-This project is fully static, so it works with GitHub Pages.
+This project is static and deploys to GitHub Pages.
 
-1. Push repository to GitHub.
-2. In repository settings, enable Pages from the `main` branch root.
-3. Open the published URL and use the converter directly on iPhone.
+1. Push to GitHub.
+2. In repository settings, enable Pages from `main` branch root.
+3. Open the published URL.
 
-## Known limitations
+## Known Limitations
 
-- `Runna Workout Image` and `Build your own` tabs are not implemented yet.
-- Parser focuses on current Runna text patterns and may miss uncommon wording.
+- OCR quality depends on screenshot quality, crop, and UI overlays.
+- Some OCR outputs still need manual correction in Build mode.
+- Free-form workout wording outside supported patterns may parse incorrectly.
 
 ## Troubleshooting
 
@@ -137,27 +128,23 @@ Use:
 npm.cmd run dev
 ```
 
-### Page looks outdated after deploy
+### Parsed rows look wrong
 
-- Hard refresh browser (`Ctrl + F5`).
-- On iPhone, close/reopen tab or clear site data.
-- Wait 1-2 minutes for GitHub Pages to finish deploy.
+- Check OCR tab warning and review parsed rows before download.
+- Use `Edit` to move parsed workout into Build mode and correct blocks.
+- If text mode fails, share the exact workout text for parser improvements.
 
-### Parsed rows look wrong but XML looks right
+## License Notes
 
-- Confirm your input still matches supported patterns.
-- Keep repeat separators as long dashes (`----------`).
-- Share exact text input to improve parser coverage.
+- This repository is currently marked as `ISC`.
+- If you use `scribe.js-ocr` in distributed/public deployments, review AGPL-3.0 obligations.
 
-## TODO
-- OCR flow: upload screenshot of Runna workout, extract text, then parse.
+## Changelog
 
-## Version / changelog
+### v1.1.0
 
-### v1.0.0
-
-- First working release with:
-  - Runna text parsing
-  - Nested parsed-row visualization
-  - Unit controls for workout and XML output
-  - XML export/download for `qdomyos-zwift`
+- Added full Image OCR workflow and Build mode workflow.
+- Added unit auto-detection from OCR text.
+- Added cached XML-unit switching (no OCR rerun).
+- Added live target updates and stronger input normalization/validation.
+- Added parser improvements for noisy OCR screenshot headers/toolbars.
