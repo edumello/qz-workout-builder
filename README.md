@@ -2,6 +2,8 @@
 
 Static web app to convert Runna workouts into `qdomyos-zwift` treadmill XML rows.
 
+You can access it on: https://edumello.github.io/qz-workout-builder/
+
 > Thanks to the `qdomyos-zwift` project: https://github.com/cagnulein/qdomyos-zwift  
 > This builder is explicitly intended to generate workout XML files for use with the `qdomyos-zwift` app.
 
